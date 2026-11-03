@@ -27,8 +27,9 @@ def _lr(c, k=1):
     return np.log(c).diff(k) * 1e4
 
 
-def build(frames):
-    j = rth(frames[SYM])
+def build(frames, sym=SYM, peers=None):
+    peers = PEERS if peers is None else peers
+    j = rth(frames[sym])
     idx = j.index
     et = idx.tz_convert(B.ET)
     dv = np.asarray(et.date)
@@ -76,12 +77,12 @@ def build(frames):
     dvol = lr1.groupby(dv).std()
     f["prev_day_vol"] = pd.Series(dvol.shift(1).reindex(dv).values, index=idx)
 
-    px = {s: rth(frames[s]).close.reindex(idx).ffill(limit=3) for s in ["SPY", "XLF"] + PEERS}
+    px = {s: rth(frames[s]).close.reindex(idx).ffill(limit=3) for s in ["SPY", "XLF"] + peers}
     for k in (1, 5, 15):
         f[f"spy_ret_{k}"] = _lr(px["SPY"], k)
     f["xlf_ret_5"] = _lr(px["XLF"], 5)
-    f["peer_ret_5"] = pd.concat([_lr(px[s], 5) for s in PEERS], axis=1).mean(axis=1)
-    f["peer_ret_1"] = pd.concat([_lr(px[s], 1) for s in PEERS], axis=1).mean(axis=1)
+    f["peer_ret_5"] = pd.concat([_lr(px[s], 5) for s in peers], axis=1).mean(axis=1)
+    f["peer_ret_1"] = pd.concat([_lr(px[s], 1) for s in peers], axis=1).mean(axis=1)
     f["rel_spy_5"] = f.ret_5 - f.spy_ret_5
     f["slot"] = slot
     f["left_min"] = left

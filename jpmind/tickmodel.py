@@ -63,7 +63,7 @@ class TickModel:
             return None
         t = r.index[-1]
         r = r.iloc[-1]
-        if not r.ok:
+        if not r.ok or r.left_min < 1:        # nothing left to forecast once the last bar of the session has closed
             return None
         px = float(r.close)
         price = lambda bps: round(px * float(np.exp(bps / 1e4)), 2)

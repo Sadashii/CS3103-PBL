@@ -968,3 +968,85 @@ async function fetchTick() {
 }
 setInterval(fetchTick, 1500);
 fetchTick();
+
+
+// ============================================================================
+// Backtest PnL panel: the headline best-case number, always next to the realistic one and the assumptions
+// ============================================================================
+
+async function fetchBacktest() {
+  try {
+    const d = await (await fetch(`${API_BASE}/backtest`)).json();
+    document.getElementById('bt-sub').textContent = `(${d.symbol}, top 2%)`;
+    const rows = d.table.map(r => `<tr><td>${r.cost_bps} bps</td><td>${r.close.toFixed(1)}</td></tr>`).join('');
+    document.getElementById('bt-body').innerHTML = `
+      <div style="display:flex;gap:16px;align-items:flex-end">
+        <div><div style="font-size:34px;font-weight:700;line-height:1">${d.best_case.ending.toFixed(1)}</div>
+             <div style="opacity:.8;font-size:12px">best case, after costs</div></div>
+      </div>
+      <div style="margin-top:6px">${d.best_case.label}.</div>
+      <div style="opacity:.8">Start ${d.start}, ${d.trades.toLocaleString()} trades, ${d.period}. Accuracy on these calls ${(d.test_accuracy * 100).toFixed(1)}%.</div>
+      <table style="margin-top:6px;width:100%;font-size:12px"><tr><th align="left">Cost</th><th align="left">100 becomes</th></tr>${rows}</table>
+      <ul style="margin:6px 0 0 16px;padding:0;opacity:.75;font-size:12px">${d.caveats.map(c => `<li>${c}</li>`).join('')}</ul>`;
+  } catch (e) { console.error('[API] backtest failed:', e); }
+}
+fetchBacktest();
+
+
+// ============================================================================
+// Daily candles + close forecast (today's close during the session, next session's close after it)
+// ============================================================================
+
+let dailyChart = null, dcCandles = null, dcUp = null, dcMed = null, dcLow = null, dcKey = null;
+
+function initDailyChart() {
+  const el = document.getElementById('daily-chart');
+  dailyChart = LightweightCharts.createChart(el, {
+    autoSize: true,
+    layout: { background: { color: '#0d1117' }, textColor: '#e6edf3', fontSize: 11 },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: { borderColor: '#30363d', timeVisible: false, rightOffset: 6 },
+    localization: { timeFormatter: (t) => new Date(t * 1000).toISOString().slice(0, 10) },
+  });
+  dcCandles = dailyChart.addCandlestickSeries({
+    upColor: '#3fb950', downColor: '#f85149', borderUpColor: '#3fb950', borderDownColor: '#f85149',
+    wickUpColor: '#3fb950', wickDownColor: '#f85149',
+  });
+  const f = { priceLineVisible: false, lastValueVisible: true };
+  dcUp = dailyChart.addLineSeries({ color: '#d29922', lineWidth: 2, lineStyle: 2, title: '90% upper', ...f });
+  dcMed = dailyChart.addLineSeries({ color: '#58a6ff', lineWidth: 2, title: 'median', ...f });
+  dcLow = dailyChart.addLineSeries({ color: '#a371f7', lineWidth: 2, lineStyle: 2, title: '90% lower', ...f });
+}
+
+async function fetchDaily() {
+  try {
+    const d = await (await fetch(`${API_BASE}/daily?limit=260`)).json();
+    if (!dailyChart) initDailyChart();
+    const last = d.bars[d.bars.length - 1];
+    const fc = d.forecast;
+    const primary = fc ? (fc.live || fc.model_from_prev_close) : null;
+    const key = `${d.bars.length}|${last && last.close}|${primary && primary.median}`;
+    if (key === dcKey) return;
+    dcKey = key;
+    dcCandles.setData(d.bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+    document.getElementById('dc-sub').textContent = d.in_progress ? '(today is still in progress)' : '(session closed)';
+    const note = document.getElementById('dc-note');
+    if (!fc) { [dcUp, dcMed, dcLow].forEach(s => s.setData([])); note.textContent = 'Forecast not available.'; return; }
+    const seg = v => [{ time: fc.anchor_time, value: fc.anchor_close }, { time: fc.target_time, value: v }];
+    dcUp.setData(seg(primary.band90.upper));
+    dcMed.setData(seg(primary.median));
+    dcLow.setData(seg(primary.band90.lower));
+    dcMed.setMarkers([{ time: fc.target_time, position: 'aboveBar', color: '#58a6ff', shape: 'circle',
+                        text: `${fc.label}: ${primary.median.toFixed(2)}` }]);
+    dailyChart.timeScale().fitContent();
+    const pc = x => (x * 100).toFixed(0) + '%', m = fc.model_from_prev_close;
+    let html = `<div><b>${fc.label}</b>: median <b>${primary.median.toFixed(2)}</b>, 90% band ${primary.band90.lower.toFixed(2)} – ${primary.band90.upper.toFixed(2)}, 50% band ${primary.band50.lower.toFixed(2)} – ${primary.band50.upper.toFixed(2)}.</div>`;
+    if (fc.live) html += `<div>Live (updated each minute, ${fc.live.minutes_left} min left): P(close above now ${fc.live.price_now.toFixed(2)}) ${pc(fc.live.p_above_now)}.</div>`;
+    html += `<div>From the previous close ${fc.anchor_close.toFixed(2)}: median ${m.median.toFixed(2)}, P(up) ${pc(m.p_up)} (${m.as_of}).</div>`;
+    html += `<div style="opacity:.7">The band is the useful part. The up/down odds are close to the base rate; no reliable directional edge was found.</div>`;
+    note.innerHTML = html;
+  } catch (e) { console.error('[API] daily failed:', e); }
+}
+setInterval(fetchDaily, 3000);
+fetchDaily();

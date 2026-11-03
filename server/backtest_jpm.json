@@ -1,0 +1,24 @@
+{
+  "symbol": "JPM",
+  "rule": "Next-minute call, only the top 2% most confident minutes (cutoff set on 2022-24 validation)",
+  "period": "2025-01-02 to 2026-10-27 (about 22 months, test data only)",
+  "start": 100,
+  "trades": 1763,
+  "test_accuracy": 0.574,
+  "gross_bps_per_trade": 0.659,
+  "gross_bps_per_trade_delayed": 0.031,
+  "best_case": {"label": "Best case: fills at the signal bar's exact close, 0.3 bps cost", "cost_bps": 0.3, "ending": 106.5},
+  "realistic": {"label": "One-minute entry delay, 0.3 bps cost", "cost_bps": 0.3, "ending": 95.4},
+  "table": [
+    {"cost_bps": 0, "close": 112.3, "delayed": 100.5},
+    {"cost_bps": 0.3, "close": 106.5, "delayed": 95.4},
+    {"cost_bps": 0.5, "close": 102.8, "delayed": 92.1},
+    {"cost_bps": 1, "close": 94.2, "delayed": 84.3},
+    {"cost_bps": 2, "close": 78.9, "delayed": 70.7}
+  ],
+  "caveats": [
+    "The best case needs a fill at the closing price of the bar that triggered the signal, which is not achievable in practice.",
+    "The 2% slice was chosen from a 1-10% sweep and the test period was looked at several times, so the figures are somewhat optimistic.",
+    "A one-minute delay removes almost all of the edge (+0.03 bps per trade before costs)."
+  ]
+}

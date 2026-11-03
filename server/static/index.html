@@ -60,6 +60,13 @@
           <div id="main-chart"></div>
         </div>
 
+        <!-- Daily candles + close forecast -->
+        <section class="panel" style="margin:8px 0">
+          <h2 class="panel-title">Daily candles &amp; close forecast <span id="dc-sub" class="panel-subtitle"></span></h2>
+          <div id="daily-chart" style="height:340px"></div>
+          <div id="dc-note" class="scenario-desc" style="margin-top:6px">Loading...</div>
+        </section>
+
         <!-- Replay controls -->
         <div class="replay-controls">
           <div class="seek-bar">
@@ -118,6 +125,12 @@
         <section class="panel">
           <h2 class="panel-title">Next tick &amp; today <span id="tk-sub" class="panel-subtitle"></span></h2>
           <div id="tk-body" class="scenario-desc">Loading...</div>
+        </section>
+
+        <!-- Backtest PnL -->
+        <section class="panel">
+          <h2 class="panel-title">Backtest: 100 rupees <span id="bt-sub" class="panel-subtitle"></span></h2>
+          <div id="bt-body" class="scenario-desc">Loading...</div>
         </section>
 
         <!-- Next-day outlook -->

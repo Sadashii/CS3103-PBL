@@ -254,7 +254,7 @@ def get_tick():
     rows = tick_model.day_rows(frames, replay.day)
     out = tick_model.at(rows, replay.cursor)
     if out is None:
-        return {"available": False, "note": "Needs about 400 closed 1m bars of history; none yet for this moment."}
+        return {"available": False, "note": "No fast forecast now: it needs about 400 closed 1m bars of history, and nothing is left to forecast after the close."}
     cfg = tick_model.cfg
     out.update({"available": True, "trained_through": cfg["cutoff"],
                 "honesty": {"next_minute_test_acc": round(cfg["next_minute"]["test"]["acc"], 4),
@@ -263,6 +263,43 @@ def get_tick():
                             "to_close_band_coverage": round(cfg["to_close"]["cov90_test"], 3)},
                 "note": "Next-minute edge is tiny (about 1 point over always-up, well under trading costs); treat probabilities as near 50/50."})
     return out
+
+
+@app.get("/api/backtest")
+def get_backtest():
+    """Static summary of the confident-call backtest (see scripts/stock_sweep.py), shown with its assumptions."""
+    return json.loads((Path(__file__).parent / "backtest_jpm.json").read_text(encoding="utf-8"))
+
+
+@app.get("/api/daily")
+def get_daily(limit: int = Query(260, ge=20, le=3000)):
+    """Daily candles up to the replay cursor (today's candle is partial while the session is open) plus a close forecast:
+    during the session -> today's close (live, from the 1m model; the next-day model's view from yesterday's close is also given);
+    after the close -> the next session's close (next-day model)."""
+    frame = replay.bars("1D", "rth")
+    bars = B.to_json(frame.iloc[-limit:], "1D")
+    done = replay.cursor >= replay.close_time
+    nd = get_nextday()
+    tk = None if done else get_tick()
+    day_t = lambda d: int(pd.Timestamp(d).timestamp())          # ET wall-clock midnight as epoch seconds (same as the candle times)
+    vis = replay.visible_day()                                  # today's candle from the 1m bars closed at the cursor (partial while open)
+    if len(vis):
+        t = day_t(replay.day)
+        bars = [b for b in bars if b["time"] != t] + [{"time": t, "open": float(vis.open.iloc[0]), "high": float(vis.high.max()),
+                                                        "low": float(vis.low.min()), "close": float(vis.close.iloc[-1]),
+                                                        "volume": float(vis.volume.sum())}]
+    fc = None
+    if nd.get("available"):
+        fc = {"mode": "next_day" if done else "today_close",
+              "label": "Next session's close" if done else "Today's close",
+              "anchor_time": day_t(nd["base_day"]), "anchor_close": nd["base_close"], "target_time": day_t(nd["target_day"]),
+              "model_from_prev_close": {"median": nd["median_close"], "expected": nd["expected_close"], "band90": nd["band90"],
+                                        "band50": nd["band50"], "p_up": nd["probabilities"]["p_up"], "as_of": nd["as_of"]}}
+        if tk and tk.get("available"):
+            t = tk["to_close"]
+            fc["live"] = {"median": t["median_close"], "band90": t["band90"], "band50": t["band50"], "p_above_now": t["p_close_above_now"],
+                          "price_now": tk["price"], "minutes_left": t["minutes_left"]}
+    return {"symbol": config.SYMBOL, "bars": bars, "forecast": fc, "in_progress": not done}
 
 
 @app.get("/api/nextday")
