@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JPM Trading Indicator — REPLAY</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- TradingView Lightweight Charts from CDN -->
+  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="title">JPM</h1>
+        <span class="badge replay-badge">REPLAY</span>
+      </div>
+      <div class="header-center">
+        <div id="session-info" class="session-info">Loading...</div>
+      </div>
+      <div class="header-right">
+        <div id="clock" class="clock">--:--:-- ET</div>
+      </div>
+    </header>
+
+    <!-- Main content -->
+    <main class="main">
+      <!-- Left panel: Chart + Controls -->
+      <div class="left-panel">
+        <!-- Chart toolbar -->
+        <div class="toolbar">
+          <div class="toolbar-group">
+            <label>Day</label>
+            <select id="day-picker" class="select"></select>
+          </div>
+          <div class="toolbar-group">
+            <label>Timeframe</label>
+            <select id="tf-picker" class="select">
+              <option value="1m">1m</option>
+              <option value="5m" selected>5m</option>
+              <option value="15m">15m</option>
+              <option value="30m">30m</option>
+              <option value="1h">1h</option>
+            </select>
+          </div>
+          <div class="toolbar-group overlays">
+            <label>Overlays</label>
+            <div class="toggle-buttons">
+              <button class="toggle-btn active" data-overlay="rsi" title="RSI (14)">RSI</button>
+              <button class="toggle-btn active" data-overlay="macd" title="MACD (12,26,9)">MACD</button>
+              <button class="toggle-btn active" data-overlay="bb" title="Bollinger Bands (20,2)">BB</button>
+              <button class="toggle-btn active" data-overlay="vwap" title="VWAP">VWAP</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main chart -->
+        <div class="chart-container">
+          <div id="main-chart"></div>
+        </div>
+
+        <!-- Replay controls -->
+        <div class="replay-controls">
+          <div class="seek-bar">
+            <input type="range" id="seek-slider" min="0" max="100" value="0" step="1" aria-label="Replay position">
+            <div class="seek-labels">
+              <span id="seek-start">09:30</span>
+              <span id="seek-cursor">09:30</span>
+              <span id="seek-end">16:00</span>
+            </div>
+          </div>
+          <div class="control-buttons">
+            <button id="btn-open" class="ctrl-btn" title="Jump to open (9:30 ET)">⏮ Open</button>
+            <button id="btn-sync" class="ctrl-btn" title="Sync to current clock time">🕐 Sync</button>
+            <button id="btn-play" class="ctrl-btn primary" title="Play/Pause (Space)">▶ Play</button>
+            <button id="btn-pause" class="ctrl-btn primary hidden" title="Play/Pause (Space)">⏸ Pause</button>
+            <div class="speed-control">
+              <label>Speed</label>
+              <select id="speed-picker" class="select">
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="5">5×</option>
+                <option value="10">10×</option>
+                <option value="30">30×</option>
+                <option value="60">60×</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right panel: Signal + Forecast + Scenarios + Log -->
+      <aside class="right-panel">
+        <!-- Signal Panel -->
+        <section class="panel">
+          <h2 class="panel-title">Signal <span id="signal-horizon" class="panel-subtitle">(30-min horizon)</span></h2>
+          <div class="signal-display">
+            <div class="signal-direction" id="signal-direction">No signal</div>
+            <div class="signal-confidence" id="signal-confidence">Confidence: —</div>
+            <div class="signal-price" id="signal-price">Price: —</div>
+            <div class="signal-time" id="signal-time">As of: —</div>
+          </div>
+        </section>
+
+        <!-- Rest-of-Day Forecast Band -->
+        <section class="panel">
+          <h2 class="panel-title">Rest-of-Day Forecast <span class="panel-subtitle">(90% band)</span></h2>
+          <div id="forecast-chart" class="mini-chart"></div>
+          <div class="forecast-legend">
+            <span class="legend-item"><span class="color upper"></span>Upper (95th)</span>
+            <span class="legend-item"><span class="color median"></span>Median</span>
+            <span class="legend-item"><span class="color lower"></span>Lower (5th)</span>
+          </div>
+        </section>
+
+        <!-- Scenarios Panel -->
+        <section class="panel">
+          <h2 class="panel-title">Scenarios</h2>
+          <div class="scenarios-grid">
+            <div class="scenario-card bull">
+              <div class="scenario-header">
+                <span class="scenario-name">Bull</span>
+                <span class="scenario-prob" id="prob-bull">—</span>
+              </div>
+              <div class="scenario-desc" id="desc-bull">Model not loaded</div>
+              <div class="scenario-path" id="path-bull">—</div>
+            </div>
+            <div class="scenario-card base">
+              <div class="scenario-header">
+                <span class="scenario-name">Base</span>
+                <span class="scenario-prob" id="prob-base">—</span>
+              </div>
+              <div class="scenario-desc" id="desc-base">Model not loaded</div>
+              <div class="scenario-path" id="path-base">—</div>
+            </div>
+            <div class="scenario-card bear">
+              <div class="scenario-header">
+                <span class="scenario-name">Bear</span>
+                <span class="scenario-prob" id="prob-bear">—</span>
+              </div>
+              <div class="scenario-desc" id="desc-bear">Model not loaded</div>
+              <div class="scenario-path" id="path-bear">—</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Signal Log Table -->
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Signal Log</h2>
+            <span id="log-summary" class="panel-subtitle"></span>
+          </div>
+          <div class="log-table-container">
+            <table id="signal-log" class="log-table">
+              <thead>
+                <tr>
+                  <th>Time (ET)</th>
+                  <th>Direction</th>
+                  <th>Confidence</th>
+                  <th>Price</th>
+                  <th>30-min result</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Footer status bar -->
+    <footer class="footer">
+      <div id="connection-status" class="status-item disconnected">WS: Disconnected</div>
+      <div id="replay-status" class="status-item">Replay: —</div>
+      <div id="data-status" class="status-item">Data: —</div>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

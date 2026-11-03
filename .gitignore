@@ -1,6 +1,10 @@
 .env
 .venv/
+.venv-nlp/
 __pycache__/
-data/raw/
+data/
+models/
 *.pyc
 logs/
+.claude/
+check_days.py

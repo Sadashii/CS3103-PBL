@@ -54,7 +54,8 @@ def display_times(index, tf):
     local = index.tz_convert(ET).tz_localize(None)
     if tf in DAILY:
         local = local.normalize()
-    return (local.astype("int64") // 10**9).astype(int)
+    # Index is datetime64[us] (microseconds), so divide by 10^6, not 10^9
+    return (local.astype("int64") // 10**6).astype(int)
 
 
 def to_display(ts):

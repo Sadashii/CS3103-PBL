@@ -12,4 +12,5 @@ dependencies = [
     "requests>=2.34.2",
     "scikit-learn>=1.9.1",
     "uvicorn[standard]>=0.54.0",
+    "vadersentiment>=3.3.2",
 ]

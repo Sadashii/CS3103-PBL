@@ -1,25 +1,34 @@
 """JPM chart server, fed by the ReplayService.
 
-GET  /api/bars     history + replayed bars up to the cursor, any timeframe, ET times
-GET  /api/replay   replay state;  POST /api/replay {action: play|pause|speed|seek|sync|open}
-WS   /ws           replay steps and log events
-GET  /api/status   store and replay health
+GET  /api/bars           history + replayed bars up to the cursor, any timeframe, ET times
+GET  /api/replay         replay state
+POST /api/replay         {action: play|pause|speed|seek|sync|open, value?}
+GET  /api/replay/days    list replayable days (most recent first)
+POST /api/replay/load    {day: "YYYY-MM-DD"} load a specific day
+WS   /ws                 replay steps and log events
+GET  /api/status         store and replay health
+GET  /api/signal         stub signal endpoint (returns "No signal" until model exists)
 
 Run: uv run uvicorn server.app:app --port 8000
 """
+import asyncio
 import json
 import logging
 import time
 from collections import deque
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 from fastapi import Body, FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import numpy as np
+import pandas as pd
+
 from jpmind import bars as B
-from jpmind import config, store
+from jpmind import config, model as M, store
 from jpmind.replay import ReplayService
 
 log = logging.getLogger("server")
@@ -29,6 +38,39 @@ STATIC = Path(__file__).parent / "static"
 clients = set()
 events = deque(maxlen=300)       # recent log lines, replayed to each new client
 replay: ReplayService | None = None
+frames = {}                     # all stored 1m frames (JPM + context symbols); only read, never sent to clients
+predictor = None                # trained models (None until scripts/train.py has run)
+tables = {}                     # day -> per-candle predictions; released to clients only up to the replay cursor
+BAR5 = pd.Timedelta(minutes=5)
+
+
+def load_models():
+    global predictor
+    try:
+        predictor = M.Predictor()
+        note("info", f"model loaded: {predictor.kind}, trained up to {predictor.cutoff}")
+    except Exception as e:      # no models yet: the signal endpoints stay in 'No signal' mode
+        predictor = None
+        note("info", f"no trained model ({e})")
+
+
+def day_table(day):
+    if predictor is None:
+        return None
+    if day not in tables:
+        end = pd.Timestamp(day, tz=B.ET).tz_convert("UTC") + pd.Timedelta(days=1)
+        fr = {s: d[(d.index >= end - pd.Timedelta(days=80)) & (d.index < end)] for s, d in frames.items()}
+        tables[day] = predictor.day_table(fr, day)
+        note("info", f"predictions ready for {day}")
+    return tables[day]
+
+
+def closed_rows():
+    """Predictions for candles that have fully closed at the replay cursor (never later ones)."""
+    t = day_table(replay.day)
+    if t is None:
+        return None
+    return t[t.index <= replay.cursor - pd.Timedelta(minutes=4)]
 
 
 def note(kind, msg):
@@ -60,16 +102,23 @@ async def on_replay(ev):
     elif ev["type"] == "state":
         what = "ended" if st["ended"] else ("playing" if st["playing"] else "paused")
         await send_all(note("info", f"replay {what} at {st['speed']}x") | {"at": st["cursor"]})
+    elif ev["type"] == "day_loaded":
+        await send_all(note("info", f"loaded replay day {st['day']}") | {"at": st["cursor"]})
 
 
 @asynccontextmanager
 async def lifespan(app):
     global replay
     data = store.load(config.SYMBOL)    # local only; run scripts/fetch_data.py to add new days
+    frames[config.SYMBOL] = data
+    for sym in config.CONTEXT_SYMBOLS:
+        frames[sym] = store.load(sym)
+    load_models()
     replay = ReplayService(data)
     replay.listeners.append(on_replay)
     s = replay.state()
     note("info", f"loaded {len(data):,} stored 1m bars; replaying US session {s['day']}")
+    await asyncio.to_thread(day_table, replay.day)
     replay.sync_to_clock()
     await replay.play()
     yield
@@ -116,6 +165,27 @@ async def control(action: str = Body(..., embed=True), value: int | None = Body(
     return replay.state()
 
 
+@app.get("/api/replay/days")
+def list_replay_days():
+    """Return list of replayable days (ISO strings, most recent first)."""
+    return {"days": replay.list_days()}
+
+
+@app.post("/api/replay/load")
+async def load_replay_day(payload: dict = Body(...)):
+    """Load a specific day for replay. Body: {day: "YYYY-MM-DD"}."""
+    day_str = payload.get("day")
+    if not day_str:
+        return {"error": "day is required"}
+    try:
+        day = date.fromisoformat(day_str)
+        await asyncio.to_thread(day_table, day)
+        await replay.load_day_async(day)
+        return replay.state()
+    except ValueError as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/status")
 def status():
     h, d = replay.history, replay.day_bars
@@ -125,6 +195,59 @@ def status():
         "day_bars": len(d), "visible_day_bars": len(replay.visible_day()),
         "clients": len(clients), "replay": replay.state(),
     }
+
+
+def _entry(t, r, last_start):
+    """One signal-log line. It is graded once the candle 30 minutes later has closed."""
+    graded = r.direction != "No signal" and t + 6 * BAR5 <= last_start and not np.isnan(r.y6)
+    sign = 1 if r.direction == "Up" else -1
+    out = {"time": B.to_display(t) + 300, "candle": B.to_display(t), "direction": r.direction,
+           "confidence": round(float(r.confidence), 4), "p_up": round(float(r.p_up), 4), "price": round(r.close, 2),
+           "status": "no signal" if r.direction == "No signal" else "open"}
+    if graded:
+        out["outcome_bps"] = round(float(sign * r.y6), 2)
+        out["net_bps"] = round(float(sign * r.y6 - config.COST_BPS), 2)
+        out["status"] = "win" if sign * r.y6 > 0 else "loss"
+    return out
+
+
+@app.get("/api/signal")
+def get_signal(cursor: int | None = None, tf: str = "5m"):
+    """Latest signal at the replay cursor: direction, calibrated confidence, 90% band to the close, scenarios."""
+    st = replay.state()
+    rows = closed_rows()
+    base = {"horizon_min": 30, "timestamp": st["cursor"], "model": None}
+    if rows is None or rows.empty:
+        return {**base, "direction": "No signal", "confidence": 0.0, "price": None,
+                "forecast_band": {"times": [], "upper": [], "median": [], "lower": []},
+                "scenarios": {k: {"path": [], "probability": 0.0, "description": "Waiting for the first closed 5m candle"}
+                              for k in ("bull", "base", "bear")},
+                "note": "No trained model loaded or no closed candle yet." if rows is None else "Before the first closed candle."}
+    r = rows.iloc[-1]
+    return {**base, "direction": r.direction, "confidence": round(float(r.confidence), 4), "p_up": round(float(r.p_up), 4), "lean": r.lean,
+            "price": round(r.close, 2), "timestamp": B.to_display(rows.index[-1]) + 300,
+            "predicted_30m_move_bps": round(float(r.med6_bps), 2), "bars_to_close": int(r.left),
+            "forecast_band": predictor.band(r), "scenarios": predictor.scenarios(r),
+            "model": {"classifier": predictor.kind, "trained_through": predictor.cutoff,
+                      "threshold": predictor.cfg["threshold"], "median_gate_bps": predictor.cfg["median_gate_bps"]},
+            "note": "Signal is computed from candles closed at or before the cursor only."}
+
+
+@app.get("/api/signals")
+def get_signals(calls_only: bool = False):
+    """Append-only log of signals up to the cursor, with grading and a running scorecard."""
+    rows = closed_rows()
+    if rows is None or rows.empty:
+        return {"signals": [], "summary": {}}
+    last_start = rows.index[-1]
+    log_rows = [_entry(t, r, last_start) for t, r in rows.iterrows()]
+    calls = [e for e in log_rows if e["status"] != "no signal"]
+    graded = [e for e in calls if "outcome_bps" in e]
+    wins = sum(e["status"] == "win" for e in graded)
+    summary = {"candles": len(log_rows), "calls": len(calls), "graded": len(graded), "wins": wins,
+               "accuracy": round(wins / len(graded), 4) if graded else None,
+               "net_bps": round(sum(e["net_bps"] for e in graded), 2), "cost_bps": config.COST_BPS}
+    return {"signals": calls if calls_only else log_rows, "summary": summary}
 
 
 @app.websocket("/ws")
