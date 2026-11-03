@@ -55,3 +55,14 @@ FinBERT news scoring needs GPU torch, which does not support Python 3.14, so it 
 1. Switch the volatility forecast to HAR (+ a calibrated residual band) and show it on the dashboard.
 2. Keep the call rule on "no calls" until a rule passes the nested check; log live predictions and grade them.
 3. Write the report as a negative-result study: honest baselines, intervals, leakage controls.
+
+## Update: next-day outlook, model zoo, live 1-minute outputs
+
+- **Nested check (2024-26)** of the 30-min rule search: net -2.75 bps/call, t=-6.2, 6,119 calls, so the deployed 30-min model makes no calls (threshold 1.01).
+- **Next-day outlook** (`jpmind/nextday.py`, `scripts/next_day.py`, `/api/nextday`): HAR volatility x empirical z-distribution, pooled over six banks. Walk-forward 2020-26: 90% band covers 0.900, 50% band 0.473. Skill is in the size of the move, not the direction (P(up) Brier equals the base rate). Overnight-return features add nothing (kept, shrunk).
+- **Model zoo** (`scripts/model_zoo.py`, results in `docs/model_zoo_results.md`): logreg, LightGBM, XGBoost, CatBoost, ExtraTrees clf/reg, MLP, GRU, 1D-CNN, Transformer plus a stacked meta-learner on 30-min direction. Test 2025-26: base rate 50.9%, best single 50.9%, stacked 51.1%. No usable edge; placebos 49-52%. Run with `.venv-nlp\Scripts\python.exe` (GPU).
+- **Two live outputs**:
+  - FAST, every closed 1m bar: `/api/tick` (`jpmind/tickmodel.py`, `jpmind/features1m.py`, `scripts/train_tick.py`, `tests/test_causal_1m.py`). Next-minute P(up)/P(down), expected price, 90% range, plus rest-of-today median close, 50/90% bands and P(close above now). Walk-forward test 2025-26: next-minute accuracy 51.8% vs 50.3% always-up (170,990 non-overlapping minutes; log-loss 0.69225 vs 0.69313); 90% next-minute band covers 90.4%; to-close 90% band covers 93.6%, pinball 14.0 vs 15.05 for a volatility-scaled baseline. P(close above now) has no skill (Brier 0.255 vs 0.250 climatology).
+  - BROAD: `/api/nextday` and the 30-min panel.
+  - The next-minute edge is about 1.5 points and well below trading costs: treat it as a calibrated near-50/50 display, not a trading signal.
+- Not in git: `data/`, `models/` (retrain with `scripts/train_tick.py`, `scripts/next_day.py`, `scripts/train.py`).

@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from jpmind import bars as B
-from jpmind import config, model as M, store
+from jpmind import config, model as M, nextday as ND, store, tickmodel as TM
 from jpmind.replay import ReplayService
 
 log = logging.getLogger("server")
@@ -39,13 +39,26 @@ clients = set()
 events = deque(maxlen=300)       # recent log lines, replayed to each new client
 replay: ReplayService | None = None
 frames = {}                     # all stored 1m frames (JPM + context symbols); only read, never sent to clients
+tick_model = None               # 1m models: next minute + rest of today
+nd_model = None                 # next-day outlook model (HAR volatility + empirical return distribution)
 predictor = None                # trained models (None until scripts/train.py has run)
 tables = {}                     # day -> per-candle predictions; released to clients only up to the replay cursor
 BAR5 = pd.Timedelta(minutes=5)
 
 
 def load_models():
-    global predictor
+    global predictor, nd_model
+    try:
+        nd_model = ND.NextDay.load(config.MODEL_DIR / "nextday.json")
+    except Exception as e:
+        nd_model = None
+        note("info", f"no next-day model ({e})")
+    global tick_model
+    try:
+        tick_model = TM.TickModel()
+    except Exception as e:
+        tick_model = None
+        note("info", f"no 1m tick model ({e})")
     try:
         predictor = M.Predictor()
         note("info", f"model loaded: {predictor.kind}, trained up to {predictor.cutoff}")
@@ -231,6 +244,45 @@ def get_signal(cursor: int | None = None, tf: str = "5m"):
             "model": {"classifier": predictor.kind, "trained_through": predictor.cutoff,
                       "threshold": predictor.cfg["threshold"], "median_gate_bps": predictor.cfg["median_gate_bps"]},
             "note": "Signal is computed from candles closed at or before the cursor only."}
+
+
+@app.get("/api/tick")
+def get_tick():
+    """Fast output, refreshed on every closed 1m bar: next-minute P(up)/P(down) and price band, plus the rest-of-today distribution."""
+    if tick_model is None:
+        return {"available": False}
+    rows = tick_model.day_rows(frames, replay.day)
+    out = tick_model.at(rows, replay.cursor)
+    if out is None:
+        return {"available": False, "note": "Needs about 400 closed 1m bars of history; none yet for this moment."}
+    cfg = tick_model.cfg
+    out.update({"available": True, "trained_through": cfg["cutoff"],
+                "honesty": {"next_minute_test_acc": round(cfg["next_minute"]["test"]["acc"], 4),
+                            "next_minute_always_up_acc": round(cfg["next_minute"]["test"]["always_up_acc"], 4),
+                            "next_minute_band_coverage": round(cfg["next_minute_band"]["coverage_test"], 3),
+                            "to_close_band_coverage": round(cfg["to_close"]["cov90_test"], 3)},
+                "note": "Next-minute edge is tiny (about 1 point over always-up, well under trading costs); treat probabilities as near 50/50."})
+    return out
+
+
+@app.get("/api/nextday")
+def get_nextday():
+    """Outlook for the next trading day made from all sessions completed at the replay cursor."""
+    if nd_model is None:
+        return {"available": False}
+    done = replay.cursor >= replay.close_time                  # today's 15:59 bar has closed: today counts as history
+    cal = pd.to_datetime(store.calendar()["date"]).sort_values().reset_index(drop=True)
+    today = pd.Timestamp(replay.day)
+    base = today if done else cal[cal < today].iloc[-1]
+    nxt = cal[cal > base]
+    target = nxt.iloc[0] if len(nxt) else None
+    out = nd_model.outlook(frames[config.SYMBOL][frames[config.SYMBOL].index < pd.Timestamp(base.date(), tz=B.ET).tz_convert("UTC") + pd.Timedelta(days=1)],
+                           base, target)
+    if out is None:
+        return {"available": False}
+    out["available"] = True
+    out["as_of"] = "after today's close" if done else "yesterday's close (today is still in progress)"
+    return out
 
 
 @app.get("/api/signals")

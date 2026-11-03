@@ -916,3 +916,55 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+
+// ============================================================================
+// Next-day outlook (expected value, 90% band, probabilities above / below)
+// ============================================================================
+
+let ndKey = null;
+async function fetchNextDay() {
+  try {
+    const d = await (await fetch(`${API_BASE}/nextday`)).json();
+    const body = document.getElementById('nd-body');
+    if (!d.available) { body.textContent = 'Model not loaded'; return; }
+    const key = `${d.base_day}`;
+    if (key === ndKey) return;
+    ndKey = key;
+    const P = d.probabilities, pc = x => (x * 100).toFixed(0) + '%';
+    document.getElementById('nd-sub').textContent = `(${d.target_day || 'next session'})`;
+    body.innerHTML = `
+      <div>Expected close <b>${d.expected_close.toFixed(2)}</b> (${d.expected_return_bps >= 0 ? '+' : ''}${d.expected_return_bps} bps from ${d.base_close.toFixed(2)})</div>
+      <div>90% band <b>${d.band90.lower.toFixed(2)} – ${d.band90.upper.toFixed(2)}</b> &middot; 50% band ${d.band50.lower.toFixed(2)} – ${d.band50.upper.toFixed(2)}</div>
+      <div>P(up) ${pc(P.p_up)} &middot; P(down) ${pc(P.p_down)} &middot; vol forecast ${d.sigma_bps} bps</div>
+      <div>P(&gt;+0.5%) ${pc(P.p_above_5)} &middot; P(&gt;+1%) ${pc(P.p_above_10)} &middot; P(&gt;+2%) ${pc(P.p_above_20)}</div>
+      <div>P(&lt;-0.5%) ${pc(P.p_below_5)} &middot; P(&lt;-1%) ${pc(P.p_below_10)} &middot; P(&lt;-2%) ${pc(P.p_below_20)}</div>
+      <div style="opacity:.7;margin-top:4px">Made at ${d.as_of}. ${d.note}</div>`;
+  } catch (e) { console.error('[API] next-day failed:', e); }
+}
+setInterval(fetchNextDay, 5000);
+fetchNextDay();
+
+// ============================================================================
+// Fast output, refreshed on every closed 1m bar: next-minute P(up)/P(down) + rest-of-today distribution
+// ============================================================================
+
+let tkKey = null;
+async function fetchTick() {
+  try {
+    const d = await (await fetch(`${API_BASE}/tick`)).json();
+    const body = document.getElementById('tk-body');
+    if (!d.available) { body.textContent = d.note || 'Model not loaded'; return; }
+    if (d.timestamp === tkKey) return;
+    tkKey = d.timestamp;
+    const m = d.next_minute, t = d.to_close, pc = x => (x * 100).toFixed(1) + '%';
+    document.getElementById('tk-sub').textContent = `(${d.price.toFixed(2)})`;
+    body.innerHTML = `
+      <div><b>Next minute</b>: P(up) <b>${pc(m.p_up)}</b> &middot; P(down) <b>${pc(m.p_down)}</b></div>
+      <div>Expected price <b>${m.expected_price.toFixed(2)}</b> (${m.median_move_bps >= 0 ? '+' : ''}${m.median_move_bps} bps) &middot; 90% range ${m.band90.lower.toFixed(2)} – ${m.band90.upper.toFixed(2)}</div>
+      <div style="margin-top:6px"><b>Rest of today</b> (${t.minutes_left} min left): P(close above now) <b>${pc(t.p_close_above_now)}</b> &middot; P(below) ${pc(t.p_close_below_now)}</div>
+      <div>Median close <b>${t.median_close.toFixed(2)}</b> &middot; 90% band ${t.band90.lower.toFixed(2)} – ${t.band90.upper.toFixed(2)} &middot; 50% band ${t.band50.lower.toFixed(2)} – ${t.band50.upper.toFixed(2)}</div>
+      <div style="opacity:.7;margin-top:4px">Walk-forward 2025-26: next-minute accuracy ${pc(d.honesty.next_minute_test_acc)} vs ${pc(d.honesty.next_minute_always_up_acc)} always-up; bands cover ${pc(d.honesty.next_minute_band_coverage)} / ${pc(d.honesty.to_close_band_coverage)}. ${d.note}</div>`;
+  } catch (e) { console.error('[API] tick failed:', e); }
+}
+setInterval(fetchTick, 1500);
+fetchTick();
