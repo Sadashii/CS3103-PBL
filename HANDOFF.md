@@ -1,6 +1,7 @@
 # Handoff: JPM trading indicator (CS3103 PBL)
 
-Last updated 2026-11-03. Design decisions are in `docs/TASK.md` (D1-D33).
+Last updated 2026-11-15. Design decisions are in `docs/TASK.md`. **Read "Current state 2026-11-15" at the bottom first**;
+the sections in between are older history and some of their "not done" lists are out of date.
 
 ## What this is
 A replay-based dashboard for JPM: 5-minute candles, a graded 30-minute Up/Down/No-signal call with confidence, a rest-of-day
@@ -85,3 +86,30 @@ FinBERT news scoring needs GPU torch, which does not support Python 3.14, so it 
   killed before it printed anything: rerun it (20+ min); port features to `jpmind/features.py` only if validation improves.
 - Macro release calendar not obtained (BLS 403, FRED unreachable, no FRED key).
 - Still missing: report, user guide, tests not run (no pytest in venv), nothing committed.
+
+## Current state 2026-11-15 (supersedes the "not done" lists above)
+- **Everything is committed and pushed** to github.com/Sadashii/CS3103-PBL (`main`). The repo is **private**; the owner
+  will make it public before submission (the report's code link needs that).
+- **Deployed model**: LightGBM 3-class Up/Flat/Down, 10-min horizon (`horizon_bars: 2`), tau 5.53 bps, 103 causal features
+  in 7 families. Training cutoff 2026-10-27; models retrained.
+- **Final numbers** (used in README, report, poster; keep them consistent):
+  - 3-class accuracy 40.7% on test 2025-01-02 .. 2026-10-27 (34,538 candles, 456 days) vs 35.8% best rule (persistence);
+    43.2% on 13 unseen days 2026-10-28 .. 11-13 vs 36.8% (`scripts/holdout_eval.py`).
+  - ECE 0.6%; big-move AUC 0.785; activity 46.3% vs 40.2%.
+  - Next-minute 51.8% (top-10% most confident 54.2%); next-minute 90% band coverage 90.4%;
+    rest-of-day 90%/50% band coverage 93.6% / 54.2%; pinball 14.0 vs 15.05.
+  - Direction on Up/Down calls 49.6%, -2.21 bps per call after 2 bps costs: no directional edge.
+  - Model zoo (10 families) all near 50% on direction. A 58.5% next-day result was a small-sample artefact (41 days),
+    rejected; it is mentioned as such in the report's Discussion.
+- **Dashboard**: `uv run uvicorn server.app:app --port 8000`. Replay tab (single chart, prediction layers, S/R levels,
+  session outlooks) and Results tab (test numbers, per-day predicted vs actual).
+- **Report** (done): `report/main.tex`, LaTeX, 15 pages (guideline limit 12-15), compiled PDF committed as
+  `report/Tanishq Sangwan_2401AI42_Report.pdf`. Figures in `report/figures/` come from
+  `uv run --with matplotlib python scripts/make_figures.py`. Build with Tectonic or Overleaf (`report/README.md`).
+  It sits exactly at 15 pages: any added content needs an equal cut.
+- **Poster** (done): built in Figma, file key `L1qp6jtvaXul9K6DnExgsY` (Poster page, frame 5:2). Not exported yet;
+  export only when the owner asks, as `Tanishq Sangwan_2401AI42.pdf`.
+- **Theme** shared by poster, report and dashboard: paper #F8F3EA, card #FFFCF6, ink #24211D, cyan #2CC3E9,
+  deep cyan #0D7794, pink #FFA0FF, yellow #FFD46F, baseline grey #B3A998; Helvetica/Arimo.
+- **Still open**: tests are runnable as scripts (`uv run python tests/test_causal.py`) but pytest is not in the venv;
+  no separate user guide beyond README.md.
