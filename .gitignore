@@ -3,7 +3,7 @@
 .venv-nlp/
 __pycache__/
 data/
-models/
+catboost_info/
 *.pyc
 logs/
 .claude/

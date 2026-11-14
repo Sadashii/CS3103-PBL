@@ -7,7 +7,10 @@ GET  /api/replay/days    list replayable days (most recent first)
 POST /api/replay/load    {day: "YYYY-MM-DD"} load a specific day
 WS   /ws                 replay steps and log events
 GET  /api/status         store and replay health
-GET  /api/signal         stub signal endpoint (returns "No signal" until model exists)
+GET  /api/signal         latest signal: 3-class 30-min call, big-move warning, 90% band, scenarios
+GET  /api/signals        append-only graded signal log with baselines on the same candles
+GET  /api/levels         support / resistance levels known at the cursor
+GET  /api/outlook        frozen rest-of-day outlooks made at 10:00 and 12:30 ET, graded at the close
 
 Run: uv run uvicorn server.app:app --port 8000
 """
@@ -28,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 from jpmind import bars as B
-from jpmind import config, model as M, nextday as ND, store, tickmodel as TM
+from jpmind import config, levels as LV, model as M, nextday as ND, store, tickmodel as TM
 from jpmind.replay import ReplayService
 
 log = logging.getLogger("server")
@@ -132,8 +135,11 @@ async def lifespan(app):
     s = replay.state()
     note("info", f"loaded {len(data):,} stored 1m bars; replaying US session {s['day']}")
     await asyncio.to_thread(day_table, replay.day)
-    replay.sync_to_clock()
-    await replay.play()
+    # during market hours, follow the clock (like a live chart); otherwise start at the open, paused
+    now = pd.Timestamp.now(tz=B.ET)
+    if pd.Timestamp("09:30").time() <= now.time() < pd.Timestamp("16:00").time():
+        replay.sync_to_clock()
+        await replay.play()
     yield
     await replay.pause()
 
@@ -149,15 +155,26 @@ def index():
 
 @app.get("/api/bars")
 def get_bars(tf: str = "5m", session: str = "rth", before: int | None = None,
-             limit: int = Query(2000, ge=1, le=20000)):
+             limit: int = Query(2000, ge=1, le=20000), partial: bool = False):
+    """Closed candles up to the cursor. With partial=1 the candle still forming at the cursor is appended and flagged
+    ("partial": true): it is display only, no signal is ever computed from it."""
     if tf not in B.TIMEFRAMES:
         return {"error": f"tf must be one of {list(B.TIMEFRAMES)}"}
     frame = replay.bars(tf, session)
     if before is not None:
         frame = frame[B.display_times(frame.index, tf) < before]
     chunk = frame.iloc[-limit:]
-    return {"symbol": config.SYMBOL, "tf": tf, "session": session, "bars": B.to_json(chunk, tf),
-            "more": len(frame) > len(chunk)}
+    out = B.to_json(chunk, tf)
+    if partial and tf not in B.DAILY and before is None:
+        vis = replay.visible_day()
+        if session == "rth":
+            vis = vis[(vis.index >= replay.open_time) & (vis.index <= replay.close_time)]
+        forming = B.resample(vis, tf, session)
+        if len(forming):
+            last = B.to_json(forming.iloc[-1:], tf)[0]
+            if not out or last["time"] > out[-1]["time"]:
+                out.append(last | {"partial": True})
+    return {"symbol": config.SYMBOL, "tf": tf, "session": session, "bars": out, "more": len(frame) > len(chunk)}
 
 
 @app.get("/api/replay")
@@ -224,12 +241,43 @@ def _entry(t, r, last_start):
     return out
 
 
+def _base_calls(r, tau):
+    """Baseline calls for the same candle, so the log can show the model against them on the replayed day."""
+    cls = lambda x: "Up" if x > tau else "Down" if x < -tau else "Neutral"
+    return {"always_neutral": "Neutral", "always_up": "Up",
+            "rsi_rule": "Up" if r.rsi < 30 else "Down" if r.rsi > 70 else "Neutral",
+            "persistence": cls(r.pk)}
+
+
+def _entry3(t, r, last_start):
+    """One 3-class log line: the call made at the candle close, graded once the candle one horizon later has closed."""
+    out = {"time": B.to_display(t) + 300, "candle": B.to_display(t), "direction": r.call, "confidence": round(float(r.call_conf), 4),
+           "p_up": round(float(r.p_up3), 4), "p_neutral": round(float(r.p_neutral), 4), "p_down": round(float(r.p_down3), 4),
+           "big_move": bool(r.big), "p_big": round(float(r.p_big), 4), "price": round(r.close, 2),
+           "status": "no signal" if r.call == "No call" else "open"}
+    has_act = "act" in r.index
+    if has_act:
+        out.update(activity=r.act, act_conf=round(float(r.act_conf), 4))
+    if r.call != "No call" and t + predictor.c3["horizon_bars"] * BAR5 <= last_start and not np.isnan(r.yk):
+        act = predictor.realised(r.yk)
+        out.update(outcome_bps=round(float(r.yk), 2), actual=act, status="win" if act == r.call else "loss",
+                   price_after=round(float(r.close * np.exp(r.yk / 1e4)), 2),
+                   baselines={k: v == act for k, v in _base_calls(r, predictor.c3["tau_bps"]).items()})
+        if has_act:
+            aa = predictor.activity_of(r.yk)
+            out.update(act_actual=aa, act_ok=aa == r.act, act_persist_ok=aa == predictor.activity_of(r.pk))
+        if r.call in ("Up", "Down"):
+            out["net_bps"] = round(float((1 if r.call == "Up" else -1) * r.yk - config.COST_BPS), 2)
+    return out
+
+
 @app.get("/api/signal")
 def get_signal(cursor: int | None = None, tf: str = "5m"):
     """Latest signal at the replay cursor: direction, calibrated confidence, 90% band to the close, scenarios."""
     st = replay.state()
     rows = closed_rows()
-    base = {"horizon_min": 30, "timestamp": st["cursor"], "model": None}
+    base = {"horizon_min": predictor.c3["horizon_bars"] * 5 if predictor is not None and predictor.c3 is not None else 30,
+            "timestamp": st["cursor"], "model": None}
     if rows is None or rows.empty:
         return {**base, "direction": "No signal", "confidence": 0.0, "price": None,
                 "forecast_band": {"times": [], "upper": [], "median": [], "lower": []},
@@ -243,7 +291,18 @@ def get_signal(cursor: int | None = None, tf: str = "5m"):
             "forecast_band": predictor.band(r), "scenarios": predictor.scenarios(r),
             "model": {"classifier": predictor.kind, "trained_through": predictor.cutoff,
                       "threshold": predictor.cfg["threshold"], "median_gate_bps": predictor.cfg["median_gate_bps"]},
-            "note": "Signal is computed from candles closed at or before the cursor only."}
+            "note": "Signal is computed from candles closed at or before the cursor only.",
+            **({"call3": {"call": r.call, "confidence": round(float(r.call_conf), 4),
+                          "probs": {"Up": round(float(r.p_up3), 4), "Neutral": round(float(r.p_neutral), 4), "Down": round(float(r.p_down3), 4)},
+                          "horizon_min": predictor.c3["horizon_bars"] * 5,
+                          "neutral_band_bps": round(predictor.c3["tau_bps"], 1),
+                          "neutral_band_price": [round(r.close * np.exp(-predictor.c3["tau_bps"] / 1e4), 2),
+                                                 round(r.close * np.exp(predictor.c3["tau_bps"] / 1e4), 2)],
+                          "big_move": bool(r.big), "p_big": round(float(r.p_big), 4),
+                          **({"activity": r.act, "act_conf": round(float(r.act_conf), 4), "p_quiet": round(float(r.p_quiet), 4),
+                              "p_active": round(float(r.p_active), 4), "active_bps": round(predictor.c3["tau_hi_bps"], 1)} if "act" in r.index else {}),
+                          "big_move_bps": round(predictor.c3["tau_big_bps"], 1),
+                          "honesty": predictor.c3["honesty"]}} if predictor.c3 is not None else {})}
 
 
 @app.get("/api/tick")
@@ -262,6 +321,119 @@ def get_tick():
                             "next_minute_band_coverage": round(cfg["next_minute_band"]["coverage_test"], 3),
                             "to_close_band_coverage": round(cfg["to_close"]["cov90_test"], 3)},
                 "note": "Next-minute edge is tiny (about 1 point over always-up, well under trading costs); treat probabilities as near 50/50."})
+    return out
+
+
+@app.get("/api/levels")
+def get_levels():
+    """Support / resistance at the cursor: prior day, floor pivots, 5-session range, pre-market, opening range, day high/low, swings."""
+    out = LV.compute(replay.history.iloc[-60 * 24 * 12:], replay.visible_day())
+    out["timestamp"] = replay.state()["cursor"]
+    return out
+
+
+OUTLOOK_TIMES = (("Morning", "09:59"), ("Midday", "12:29"))   # bar opening at this minute closes at 10:00 / 12:30
+
+
+@app.get("/api/outlook")
+def get_outlook():
+    """Two fixed outlooks per day (rest of day), made once from the bars closed at 10:00 and 12:30 ET and never changed afterwards.
+    Each is graded at the close: did the close land in the 50% / 90% band, and was the lean (P(close above) vs 50%) right."""
+    if tick_model is None:
+        return {"available": False, "outlooks": []}
+    rows = tick_model.day_rows(frames, replay.day)
+    done = replay.cursor >= replay.close_time
+    vis = replay.visible_day()
+    close = float(vis[vis.index <= replay.close_time].close.iloc[-1]) if done and len(vis) else None
+    res = []
+    for name, hhmm in OUTLOOK_TIMES:
+        t = pd.Timestamp(f"{replay.day} {hhmm}", tz=B.ET).tz_convert("UTC")
+        item = {"name": name, "made_at": B.to_display(t) + 60, "status": "pending"}
+        if replay.cursor >= t:
+            o = tick_model.at(rows, t)
+            if o is not None:
+                d = o["to_close"]
+                lv = LV.compute(replay.history.iloc[-60 * 24 * 12:], replay.day_bars[replay.day_bars.index <= t])
+                item.update(status="open", price=o["price"], minutes_left=d["minutes_left"], median_close=d["median_close"],
+                            band50=d["band50"], band90=d["band90"], p_close_above=d["p_close_above_now"],
+                            support=lv["nearest_support"], resistance=lv["nearest_resistance"])
+                if close is not None:
+                    lean_up = d["p_close_above_now"] >= 0.5
+                    item.update(status="graded", actual_close=round(close, 2), move_bps=round((close / o["price"] - 1) * 1e4, 1),
+                                in50=d["band50"]["lower"] <= close <= d["band50"]["upper"],
+                                in90=d["band90"]["lower"] <= close <= d["band90"]["upper"],
+                                lean_ok=(close > o["price"]) == lean_up)
+        res.append(item)
+    cfg = tick_model.cfg
+    return {"available": True, "outlooks": res, "day": str(replay.day),
+            "honesty": {"to_close_band_coverage": round(cfg["to_close"]["cov90_test"], 3)},
+            "note": "Bands are the skill; the up/down lean has no measured skill (Brier 0.255 vs 0.250 climatology)."}
+
+
+def _hold_row(r, cols):
+    """One unseen day: 10-minute call accuracy vs the best simple rule, and each outlook's day call vs the actual close."""
+    f = lambda k: None if k not in r or pd.isna(r[k]) else (bool(r[k]) if isinstance(r[k], (bool, np.bool_)) else float(r[k]))
+    out = {"day": r["day"], "candles": int(r["candles"]), "model": float(r["model"]),
+           "best_baseline": float(max(r[c] for c in cols)), "best_name": max(cols, key=lambda c: r[c]),
+           "open": f("open"), "close": f("close")}
+    for n in ("am", "pm"):
+        out[n] = {k: f(f"{n}_{k}") for k in ("price", "median", "p_up", "lo90", "hi90", "in50", "in90", "lean_ok")}
+    return out
+
+
+@app.get("/api/results")
+def get_results():
+    """Numerical results for the Results tab, read from the files the training / evaluation scripts write
+    (models/cls3_metrics.json, models/cls3_per_day.csv, models/tick_config.json, models/metrics.json, docs/holdout_results.csv)."""
+    md, root = config.MODEL_DIR, config.ROOT
+    rd = lambda p: json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+    m3, tk, m2 = rd(md / "cls3_metrics.json"), rd(md / "tick_config.json"), rd(md / "metrics.json")
+    c3 = rd(md / "cls3.json") or {}
+    out = {"cutoff": c3.get("cutoff"), "horizon_min": c3.get("horizon_bars", 2) * 5, "trained_at": c3.get("trained_at")}
+    if m3:
+        dep = m3["deployed"]
+        t = m3["models"][dep]["test"]
+        out["test"] = {"period": "2025-01-02 to " + m3["cutoff"], "candles": t["n"], "model": dep, "acc": t["acc"], "ece": t["ece"],
+                       "logloss": t["logloss"], "dir_hit": t["dir_hit"], "net_bps_per_call": t["net_bps_per_call"],
+                       "moves_called": t["moves_called"], "cost_bps": m3["cost_bps"], "tau_bps": m3["tau_bps"],
+                       "baselines": {k: v["test"]["acc"] for k, v in m3["baselines"].items() if k != "majority_2016_21"},
+                       "other_models": {k: v["test"]["acc"] for k, v in m3["models"].items() if k != dep}}
+        sd = m3["single_day"]
+        out["single_day"] = {"days": sd["days"], "mean": sd["model_mean"], "p10": sd["model_p10"], "p90": sd["model_p90"],
+                             "beats": {k: v for k, v in sd["beats"].items() if k != "majority_2016_21"}}
+        a = m3["activity"]
+        out["activity"] = {"acc": a["model"]["test"]["acc"], "persistence": a["baselines"]["persistence"]["test"],
+                           "always_normal": a["baselines"]["always_normal"]["test"], "beats_persistence_days": a["single_day"]["beats"]["persistence"],
+                           "active_bps": a["tau_hi_bps"]}
+        b = m3["big_move"]
+        out["big_move"] = {"auc": b["test"]["auc"], "base_rate": b["test"]["base_rate"], "top_decile": b["test"]["rate_top_decile"],
+                           "bottom_decile": b["test"]["rate_bottom_decile"], "flag_share": b["test_flagged"]["share"],
+                           "flag_hit": b["test_flagged"]["big_rate"], "bps": m3["tau_big_bps"]}
+    per_day = md / "cls3_per_day.csv"
+    if per_day.exists():
+        pdf = pd.read_csv(per_day)
+        out["daily_acc"] = [round(float(x), 4) for x in pdf["model"]]
+    hold = root / "docs" / "holdout_results.csv"
+    if hold.exists():
+        h = pd.read_csv(hold)
+        w = h["candles"]
+        avg = lambda c: float(np.average(h[c], weights=w))
+        cols = ["always_neutral", "always_up", "rsi_rule", "persistence"]
+        out["holdout"] = {"days": len(h), "first": h["day"].iloc[0], "last": h["day"].iloc[-1], "candles": int(w.sum()), "acc": avg("model"),
+                          "baselines": {c: avg(c) for c in cols}, "beats": {c: float((h["model"] > h[c]).mean()) for c in cols},
+                          "activity": avg("activity"), "activity_persist": avg("activity_persist"),
+                          "am_in90": float(h["am_in90"].mean()), "pm_in90": float(h["pm_in90"].mean()),
+                          "am_in50": float(h["am_in50"].mean()), "pm_in50": float(h["pm_in50"].mean()),
+                          "am_dir": float(h["am_lean_ok"].mean()) if "am_lean_ok" in h else None,
+                          "pm_dir": float(h["pm_lean_ok"].mean()) if "pm_lean_ok" in h else None,
+                          "per_day": [_hold_row(r, cols) for _, r in h.iterrows()]}
+    if tk:
+        out["tick"] = {"acc": tk["next_minute"]["test"]["acc"], "always_up": tk["next_minute"]["test"]["always_up_acc"],
+                       "n": tk["next_minute"]["test"]["n"], "band_cov": tk["next_minute_band"]["coverage_test"],
+                       "close_cov90": tk["to_close"]["cov90_test"], "close_cov50": tk["to_close"]["cov50_test"],
+                       "pinball": tk["to_close"].get("pinball_model_test"), "pinball_base": tk["to_close"].get("pinball_vol_scaled_baseline_test")}
+    if m2 and "nested" in m2:
+        out["nested"] = {"t": m2["nested"]["t"], "net_bps": m2["nested"]["net_bps"], "n": m2["nested"]["n"], "required_t": m2["nested"]["required_t"]}
     return out
 
 
@@ -329,6 +501,24 @@ def get_signals(calls_only: bool = False):
     if rows is None or rows.empty:
         return {"signals": [], "summary": {}}
     last_start = rows.index[-1]
+    if predictor.c3 is not None:
+        log_rows = [_entry3(t, r, last_start) for t, r in rows.iterrows()]
+        calls = [e for e in log_rows if e["status"] != "no signal"]
+        graded = [e for e in calls if "actual" in e]
+        moves = [e for e in graded if "net_bps" in e]
+        n = len(graded)
+        summary = {"scheme": "3-class", "candles": len(log_rows), "calls": len(calls), "graded": n,
+                   "wins": sum(e["status"] == "win" for e in graded),
+                   "accuracy": round(sum(e["status"] == "win" for e in graded) / n, 4) if n else None,
+                   "baselines": {k: round(sum(e["baselines"][k] for e in graded) / n, 4) for k in graded[0]["baselines"]} if n else {},
+                   "move_calls": len(moves), "net_bps": round(sum(e["net_bps"] for e in moves), 2),
+                   "act_accuracy": round(sum(e.get("act_ok", False) for e in graded) / n, 4) if n and "act_ok" in graded[0] else None,
+                   "act_persistence": round(sum(e.get("act_persist_ok", False) for e in graded) / n, 4) if n and "act_ok" in graded[0] else None,
+                   "big_flags": sum(e["big_move"] for e in graded),
+                   "big_hit": sum(e["big_move"] and abs(e["outcome_bps"]) > predictor.c3["tau_big_bps"] for e in graded),
+                   "neutral_band_bps": round(predictor.c3["tau_bps"], 1), "cost_bps": config.COST_BPS,
+                   "horizon_min": predictor.c3["horizon_bars"] * 5}
+        return {"signals": calls if calls_only else log_rows, "summary": summary}
     log_rows = [_entry(t, r, last_start) for t, r in rows.iterrows()]
     calls = [e for e in log_rows if e["status"] != "no signal"]
     graded = [e for e in calls if "outcome_bps" in e]

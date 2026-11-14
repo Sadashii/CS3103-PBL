@@ -66,3 +66,22 @@ FinBERT news scoring needs GPU torch, which does not support Python 3.14, so it 
   - BROAD: `/api/nextday` and the 30-min panel.
   - The next-minute edge is about 1.5 points and well below trading costs: treat it as a calibrated near-50/50 display, not a trading signal.
 - Not in git: `data/`, `models/` (retrain with `scripts/train_tick.py`, `scripts/next_day.py`, `scripts/train.py`).
+
+## Update 2026-11-12: 3-class call, activity call, log table (TASK.md 6.1, D34-D38)
+- TA clarifications: one-day replay test, multi-class Up/Down/Neutral "+ more", a log table, criteria not given.
+- `scripts/train_cls3.py` (about 3 min) -> `models/cls3_*.{txt,joblib,json}`, `big_lgb.txt`, `act_lgb.txt`, `cls3_metrics.json`, `cls3_per_day.csv`.
+  Test 2025-26: 3-class accuracy 40.7% (baselines 32-35%), beats always-Neutral on 73% of single days; activity (Quiet/Normal/Active) 45.2% vs 39.9% persistence;
+  big-move AUC 0.77. Direction on Up/Down calls is still 50.9% and loses about 1.6 bps per call after costs.
+- `scripts/exp_magnitude.py`: extra volatility features do not help (noise-level change).
+- Server: `/api/signal` has `call3`; `/api/signals` grades every candle and scores baselines on the same candles. Old 2-class path is used only if `models/cls3.json` is missing.
+- Not done: tests not run (pytest not installed in the venv), report and user guide not written, horizon comparison (10 vs 30 min) not run, nothing committed.
+
+## Stopped mid-work 2026-11-12 21:35 (resume here)
+- Done: `scripts/exp_horizon_direction.py` -> no selective directional edge (nested t = -2.5); 10-min horizon beats 30-min on validation
+  (edge over best baseline +5.5 vs +4.2 pts; beats always-Neutral on 79% vs 73% of days).
+- Code already switched to a configurable horizon (`train_cls3.py --bars 2` default, `jpmind/model.py`, `server/app.py`, UI), but
+  **models in `models/` are still the 30-min ones and lack `horizon_bars: 2`**. Run `uv run python scripts/train_cls3.py` (about 3 min) before starting the server.
+- Downloaded 1m SIP bars for VIXY, TLT, KRE, IEF into `data/raw/`. `scripts/exp_context.py 2` (pre-market SPY reaction + ETF features) was
+  killed before it printed anything: rerun it (20+ min); port features to `jpmind/features.py` only if validation improves.
+- Macro release calendar not obtained (BLS 403, FRED unreachable, no FRED key).
+- Still missing: report, user guide, tests not run (no pytest in venv), nothing committed.

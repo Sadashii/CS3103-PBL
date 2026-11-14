@@ -16,8 +16,8 @@ from . import config
 MIN = pd.Timedelta(minutes=1)
 SPEEDS = [1, 2, 5, 10, 30, 60]
 
-# Training cutoff per D30: last training session was 27 Oct 2026
-TRAINING_CUTOFF = pd.Timestamp("2026-10-27", tz="UTC").date()
+# Training cutoff (D30): read from the deployed model, so retraining with a later --cutoff moves the replayable days with it
+TRAINING_CUTOFF = pd.Timestamp(config.trained_cutoff()).date()
 
 # Timeframe to seconds mapping for "closed candle" filtering
 TF_SECONDS = {
@@ -75,9 +75,12 @@ class ReplayService:
         self.day_bars = self._bars_1m[(self._bars_1m.index >= start) & (self._bars_1m.index < end)]
         if len(self.day_bars) == 0:
             raise ValueError(f"No bars for day {day}")
-        self.first, self.last = self.day_bars.index.min(), self.day_bars.index.max()
         self.open_time = pd.Timestamp(f"{self.day} 09:30", tz=B.ET).tz_convert("UTC")
         self.close_time = pd.Timestamp(f"{self.day} 15:59", tz=B.ET).tz_convert("UTC")
+        # replay covers the regular session only: from just before the open to the last 1m bar of the session
+        # (pre-market bars still count as known data, they are just not stepped through one by one)
+        self.first = self.open_time - MIN
+        self.last = min(self.close_time, self.day_bars.index.max())
         self._hist_cache.clear()
         self.cursor = self.open_time - MIN   # before the open: nothing of today visible yet
         self.playing = False

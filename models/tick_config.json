@@ -1,0 +1,110 @@
+{
+ "cutoff": "2026-10-27",
+ "features": [
+  "ret_1",
+  "ret_2",
+  "ret_3",
+  "ret_5",
+  "ret_10",
+  "ret_15",
+  "ret_30",
+  "ret_60",
+  "vol_15",
+  "vol_60",
+  "vol_390",
+  "vol_ratio",
+  "range_1",
+  "close_pos",
+  "ret_prev_bar_abs",
+  "imb_tick_1",
+  "imb_tick_5",
+  "imb_tick_15",
+  "cumimb_tick",
+  "imb_clv_1",
+  "imb_clv_5",
+  "imb_clv_15",
+  "cumimb_clv",
+  "rel_vol",
+  "trades_rel",
+  "avg_trade_rel",
+  "vwap_dist",
+  "ret_day",
+  "dist_day_high",
+  "dist_day_low",
+  "gap",
+  "ret_vs_prev_close",
+  "prev_day_ret",
+  "prev_day_vol",
+  "spy_ret_1",
+  "spy_ret_5",
+  "spy_ret_15",
+  "xlf_ret_5",
+  "peer_ret_5",
+  "peer_ret_1",
+  "rel_spy_5",
+  "slot",
+  "left_min",
+  "dow"
+ ],
+ "next_minute": {
+  "val": {
+   "n": 270792,
+   "acc": 0.5124708263168779,
+   "always_up_acc": 0.5044942243493161,
+   "logloss": 0.6925467547465497,
+   "logloss_base_rate": 0.6931067839109754,
+   "acc_top10pct_confidence": 0.5367982908501547
+  },
+  "test": {
+   "n": 170990,
+   "acc": 0.5178139072460378,
+   "always_up_acc": 0.5030937481724077,
+   "logloss": 0.692248095536801,
+   "logloss_base_rate": 0.6931319608055619,
+   "acc_top10pct_confidence": 0.5418821517286313
+  }
+ },
+ "next_minute_band": {
+  "q_adj_bps": -0.07462663948535919,
+  "coverage_test": 0.9042575589215743,
+  "coverage_test_raw": 0.9069594713141119
+ },
+ "to_close": {
+  "cov90_val": 0.900003435835767,
+  "cov90_val_raw": 0.8476722212678234,
+  "cov90_test": 0.9364888172590268,
+  "cov90_test_raw": 0.8958746854412305,
+  "cov50_val": 0.500003435835767,
+  "cov50_val_raw": 0.45858787149974234,
+  "cov50_test": 0.5423530409703962,
+  "cov50_test_raw": 0.499612633245681,
+  "pinball_model_test": 14.002556051526751,
+  "pinball_vol_scaled_baseline_test": 15.051810009279027,
+  "brier_p_close_above_now_test": 0.25505018953654607,
+  "brier_climatology_test": 0.24999779645379225,
+  "adj_bps": {
+   "90": 12.884868621826172,
+   "50": 3.028339385986328
+  }
+ },
+ "q1_adj_bps": -0.07462663948535919,
+ "qD_adj_bps": {
+  "90": 12.884868621826172,
+  "50": 3.028339385986328
+ },
+ "QD": [
+  0.05,
+  0.1,
+  0.25,
+  0.5,
+  0.75,
+  0.9,
+  0.95
+ ],
+ "Q1": [
+  0.05,
+  0.5,
+  0.95
+ ],
+ "trained_at": "2026-11-04 00:49:02"
+}

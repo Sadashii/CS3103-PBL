@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JPM Trading Indicator — REPLAY</title>
+  <title>JPM Trading Indicator</title>
   <link rel="stylesheet" href="/static/style.css">
-  <!-- TradingView Lightweight Charts from CDN -->
-  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- TradingView Lightweight Charts 4.2.1 (Apache 2.0), served locally so the page never depends on a CDN -->
+  <script src="/static/vendor/lightweight-charts-4.2.1.js"></script>
 </head>
 <body>
   <div class="app">
@@ -14,63 +14,73 @@
     <header class="header">
       <div class="header-left">
         <h1 class="title">JPM</h1>
-        <span class="badge replay-badge">REPLAY</span>
+        <span class="header-sub">JPMorgan Chase · AI trading indicator</span>
+        <span class="badge replay-badge" title="A past trading day is played back minute by minute. The model only ever sees candles that have already closed.">REPLAY</span>
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-view="replay" role="tab" aria-selected="true">Replay</button>
+          <button class="tab" data-view="results" role="tab" aria-selected="false">Results</button>
+        </nav>
       </div>
       <div class="header-center">
         <div id="session-info" class="session-info">Loading...</div>
       </div>
       <div class="header-right">
+        <button id="btn-help" class="ctrl-btn help-btn">? How to read this</button>
         <div id="clock" class="clock">--:--:-- ET</div>
       </div>
     </header>
 
     <!-- Main content -->
-    <main class="main">
-      <!-- Left panel: Chart + Controls -->
+    <main class="main" id="replay-view">
+      <!-- Left: the one chart + controls + log -->
       <div class="left-panel">
-        <!-- Chart toolbar -->
         <div class="toolbar">
           <div class="toolbar-group">
             <label>Day</label>
-            <select id="day-picker" class="select"></select>
+            <select id="day-picker" class="select" title="Trading days after the model's training cutoff (the model never saw them)"></select>
           </div>
           <div class="toolbar-group">
-            <label>Timeframe</label>
+            <label>Candles</label>
             <select id="tf-picker" class="select">
-              <option value="1m">1m</option>
-              <option value="5m" selected>5m</option>
-              <option value="15m">15m</option>
-              <option value="30m">30m</option>
-              <option value="1h">1h</option>
+              <option value="1m">1 min</option>
+              <option value="5m" selected>5 min</option>
+              <option value="15m">15 min</option>
+              <option value="30m">30 min</option>
+              <option value="1h">1 hour</option>
             </select>
           </div>
           <div class="toolbar-group overlays">
-            <label>Overlays</label>
+            <label>Predictions</label>
             <div class="toggle-buttons">
-              <button class="toggle-btn active" data-overlay="rsi" title="RSI (14)">RSI</button>
-              <button class="toggle-btn active" data-overlay="macd" title="MACD (12,26,9)">MACD</button>
-              <button class="toggle-btn active" data-overlay="bb" title="Bollinger Bands (20,2)">BB</button>
-              <button class="toggle-btn active" data-overlay="vwap" title="VWAP">VWAP</button>
+              <button class="toggle-btn pred" data-overlay="fc" title="Where the price is expected to go for the rest of the day, with a likely high and low (90% range)">Rest of day</button>
+              <button class="toggle-btn pred" data-overlay="next" title="The range the price should stay in over the next 10 minutes if the call is Flat">Next 10 min</button>
+              <button class="toggle-btn pred" data-overlay="ol" title="Likely closing range, fixed at 10:00 and 12:30 and never changed afterwards">Outlooks</button>
+              <button class="toggle-btn pred" data-overlay="calls" title="Every Up/Down call made today, marked ✓ or ✗ once its 10 minutes are over">Past calls</button>
+              <button class="toggle-btn pred" data-overlay="sr" title="Support (green) and resistance (red): prior day high/low/close, pivots, opening range, day high/low, swing levels">Levels</button>
+            </div>
+          </div>
+          <div class="toolbar-group overlays">
+            <label>Indicators</label>
+            <div class="toggle-buttons">
+              <button class="toggle-btn" data-overlay="vwap" title="Volume-weighted average price for the day">VWAP</button>
+              <button class="toggle-btn" data-overlay="bb" title="Bollinger Bands (20, 2)">BB</button>
+              <button class="toggle-btn" data-overlay="rsi" title="RSI (14): over 70 overbought, under 30 oversold">RSI</button>
+              <button class="toggle-btn" data-overlay="macd" title="MACD (12, 26, 9)">MACD</button>
             </div>
           </div>
         </div>
 
-        <!-- Main chart -->
         <div class="chart-container">
           <div id="main-chart"></div>
         </div>
 
-        <!-- Daily candles + close forecast -->
-        <section class="panel" style="margin:8px 0">
-          <h2 class="panel-title">Daily candles &amp; close forecast <span id="dc-sub" class="panel-subtitle"></span></h2>
-          <div id="daily-chart" style="height:340px"></div>
-          <div id="dc-note" class="scenario-desc" style="margin-top:6px">Loading...</div>
-        </section>
+        <!-- Legend: only the layers that are switched on -->
+        <div id="chart-legend" class="chart-legend"></div>
 
         <!-- Replay controls -->
         <div class="replay-controls">
           <div class="seek-bar">
-            <input type="range" id="seek-slider" min="0" max="100" value="0" step="1" aria-label="Replay position">
+            <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1" aria-label="Replay time of day">
             <div class="seek-labels">
               <span id="seek-start">09:30</span>
               <span id="seek-cursor">09:30</span>
@@ -78,128 +88,190 @@
             </div>
           </div>
           <div class="control-buttons">
-            <button id="btn-open" class="ctrl-btn" title="Jump to open (9:30 ET)">⏮ Open</button>
-            <button id="btn-sync" class="ctrl-btn" title="Sync to current clock time">🕐 Sync</button>
+            <button id="btn-open" class="ctrl-btn" title="Jump back to the 9:30 ET open">⏮ Start of day</button>
+            <button id="btn-sync" class="ctrl-btn" title="Jump to the same clock time as now (ET)">🕐 Same time as now</button>
             <button id="btn-play" class="ctrl-btn primary" title="Play/Pause (Space)">▶ Play</button>
             <button id="btn-pause" class="ctrl-btn primary hidden" title="Play/Pause (Space)">⏸ Pause</button>
             <div class="speed-control">
               <label>Speed</label>
               <select id="speed-picker" class="select">
-                <option value="1">1×</option>
+                <option value="1">real time</option>
                 <option value="2">2×</option>
                 <option value="5">5×</option>
                 <option value="10">10×</option>
                 <option value="30">30×</option>
-                <option value="60">60×</option>
+                <option value="60">60× (1 min per second)</option>
               </select>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Right panel: Signal + Forecast + Scenarios + Log -->
-      <aside class="right-panel">
-        <!-- Signal Panel -->
+        <!-- Signal Log -->
         <section class="panel">
-          <h2 class="panel-title">Signal <span id="signal-horizon" class="panel-subtitle">(30-min horizon)</span></h2>
-          <div class="signal-display">
-            <div class="signal-direction" id="signal-direction">No signal</div>
-            <div class="signal-confidence" id="signal-confidence">Confidence: —</div>
-            <div class="signal-price" id="signal-price">Price: —</div>
-            <div class="signal-time" id="signal-time">As of: —</div>
+          <div class="panel-header" style="display:block">
+            <h2 class="panel-title">Signal log <span class="panel-subtitle">every call, and whether it came true 10 minutes later</span></h2>
+            <div id="log-summary" class="scorecard"></div>
           </div>
-        </section>
-
-        <!-- Rest-of-Day Forecast Band -->
-        <section class="panel">
-          <h2 class="panel-title">Rest-of-Day Forecast <span class="panel-subtitle">(90% band)</span></h2>
-          <div id="forecast-chart" class="mini-chart"></div>
-          <div class="forecast-legend">
-            <span class="legend-item"><span class="color upper"></span>Upper (95th)</span>
-            <span class="legend-item"><span class="color median"></span>Median</span>
-            <span class="legend-item"><span class="color lower"></span>Lower (5th)</span>
-          </div>
-        </section>
-
-        <!-- Fast output: next tick + today -->
-        <section class="panel">
-          <h2 class="panel-title">Next tick &amp; today <span id="tk-sub" class="panel-subtitle"></span></h2>
-          <div id="tk-body" class="scenario-desc">Loading...</div>
-        </section>
-
-        <!-- Backtest PnL -->
-        <section class="panel">
-          <h2 class="panel-title">Backtest: 100 rupees <span id="bt-sub" class="panel-subtitle"></span></h2>
-          <div id="bt-body" class="scenario-desc">Loading...</div>
-        </section>
-
-        <!-- Next-day outlook -->
-        <section class="panel">
-          <h2 class="panel-title">Next-day outlook <span id="nd-sub" class="panel-subtitle"></span></h2>
-          <div id="nd-body" class="scenario-desc">Loading...</div>
-        </section>
-
-        <!-- Scenarios Panel -->
-        <section class="panel">
-          <h2 class="panel-title">Scenarios</h2>
-          <div class="scenarios-grid">
-            <div class="scenario-card bull">
-              <div class="scenario-header">
-                <span class="scenario-name">Bull</span>
-                <span class="scenario-prob" id="prob-bull">—</span>
-              </div>
-              <div class="scenario-desc" id="desc-bull">Model not loaded</div>
-              <div class="scenario-path" id="path-bull">—</div>
-            </div>
-            <div class="scenario-card base">
-              <div class="scenario-header">
-                <span class="scenario-name">Base</span>
-                <span class="scenario-prob" id="prob-base">—</span>
-              </div>
-              <div class="scenario-desc" id="desc-base">Model not loaded</div>
-              <div class="scenario-path" id="path-base">—</div>
-            </div>
-            <div class="scenario-card bear">
-              <div class="scenario-header">
-                <span class="scenario-name">Bear</span>
-                <span class="scenario-prob" id="prob-bear">—</span>
-              </div>
-              <div class="scenario-desc" id="desc-bear">Model not loaded</div>
-              <div class="scenario-path" id="path-bear">—</div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Signal Log Table -->
-        <section class="panel">
-          <div class="panel-header">
-            <h2 class="panel-title">Signal Log</h2>
-            <span id="log-summary" class="panel-subtitle"></span>
-          </div>
-          <div class="log-table-container">
+          <div class="log-table-container" style="max-height:420px;overflow-y:auto">
             <table id="signal-log" class="log-table">
               <thead>
                 <tr>
                   <th>Time (ET)</th>
-                  <th>Direction</th>
-                  <th>Confidence</th>
+                  <th title="Up / Flat / Down for the next 10 minutes">Call</th>
+                  <th title="Model probability for the call; guessing is 33%">Prob.</th>
+                  <th title="Quiet / Normal / Active: how much the price is expected to move">Activity</th>
+                  <th title="Warning that a move bigger than about 0.2% is likely">Big move?</th>
                   <th>Price</th>
-                  <th>30-min result</th>
+                  <th id="log-after">Price +10m</th>
+                  <th>What happened</th>
+                  <th>Call right?</th>
+                  <th>Activity right?</th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
           </div>
         </section>
+      </div>
+
+      <!-- Right: plain-language read-out -->
+      <aside class="right-panel">
+        <section class="panel now-panel">
+          <h2 class="panel-title">Right now <span id="signal-time" class="panel-subtitle"></span></h2>
+          <div id="now-summary" class="now-summary">Waiting for the first closed candle…</div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Next 10 minutes <span id="signal-horizon" class="panel-subtitle"></span></h2>
+          <div class="signal-display">
+            <div class="signal-direction" id="signal-direction">Waiting</div>
+            <div class="signal-confidence" id="signal-confidence">—</div>
+            <div class="prob-bar" id="prob-bar"></div>
+            <div class="signal-band" id="signal-band"></div>
+            <div class="signal-activity" id="signal-activity"></div>
+            <div class="signal-big" id="signal-big"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Key levels <span id="lv-sub" class="panel-subtitle"></span></h2>
+          <div id="lv-body" class="scenario-desc">Loading...</div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Where will it close? <span class="panel-subtitle">fixed at 10:00 &amp; 12:30, checked at 16:00</span></h2>
+          <div id="ol-body" class="scenario-desc">Loading...</div>
+        </section>
+
+        <details class="panel more-panel">
+          <summary class="panel-title">More model outputs</summary>
+          <section class="sub-panel">
+            <h3 class="sub-title">Next minute &amp; rest of today <span id="tk-sub" class="panel-subtitle"></span></h3>
+            <div id="tk-body" class="scenario-desc">Loading...</div>
+          </section>
+          <section class="sub-panel">
+            <h3 class="sub-title">Scenarios</h3>
+            <div class="scenarios-grid">
+              <div class="scenario-card bull">
+                <div class="scenario-header"><span class="scenario-name">Bull</span><span class="scenario-prob" id="prob-bull">—</span></div>
+                <div class="scenario-desc" id="desc-bull">—</div>
+                <div class="scenario-path" id="path-bull">—</div>
+              </div>
+              <div class="scenario-card base">
+                <div class="scenario-header"><span class="scenario-name">Base</span><span class="scenario-prob" id="prob-base">—</span></div>
+                <div class="scenario-desc" id="desc-base">—</div>
+                <div class="scenario-path" id="path-base">—</div>
+              </div>
+              <div class="scenario-card bear">
+                <div class="scenario-header"><span class="scenario-name">Bear</span><span class="scenario-prob" id="prob-bear">—</span></div>
+                <div class="scenario-desc" id="desc-bear">—</div>
+                <div class="scenario-path" id="path-bear">—</div>
+              </div>
+            </div>
+          </section>
+          <section class="sub-panel">
+            <h3 class="sub-title">Next trading day <span id="nd-sub" class="panel-subtitle"></span></h3>
+            <div id="nd-body" class="scenario-desc">Loading...</div>
+          </section>
+          <section class="sub-panel">
+            <h3 class="sub-title">Backtest: 100 rupees <span id="bt-sub" class="panel-subtitle"></span></h3>
+            <div id="bt-body" class="scenario-desc">Loading...</div>
+          </section>
+        </details>
       </aside>
     </main>
 
-    <!-- Footer status bar -->
+    <!-- Results: the model's numbers, read from the files the training and evaluation scripts write -->
+    <main class="results-view hidden" id="results-view">
+      <div class="results-inner">
+        <p id="res-intro" class="res-intro">Loading results…</p>
+        <div id="res-tiles" class="res-tiles"></div>
+
+        <section class="panel">
+          <h2 class="panel-title">Predicted vs actual, day by day <span class="panel-subtitle">days the model never saw · click a row to replay that day</span></h2>
+          <p class="res-note">At <b>10:00</b> and <b>12:30</b> the model fixes a prediction for the close: an expected price, a chance the day ends
+            higher than the price at that moment (the direction call), and a 90% range. These are compared with the actual close at 16:00.</p>
+          <div class="log-table-container"><table class="log-table res-table" id="res-days"></table></div>
+          <div id="res-days-sum" class="res-note"></div>
+        </section>
+
+        <div class="res-grid">
+          <section class="panel">
+            <h2 class="panel-title">10-minute call accuracy vs simple rules <span class="panel-subtitle">Up / Flat / Down, share of candles called right</span></h2>
+            <div id="res-bars"></div>
+          </section>
+          <section class="panel">
+            <h2 class="panel-title">Every output, tested <span class="panel-subtitle">on data after training</span></h2>
+            <div class="log-table-container"><table class="log-table res-table" id="res-skills"></table></div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <h2 class="panel-title">How these were measured</h2>
+          <ul id="res-method" class="res-method"></ul>
+        </section>
+      </div>
+    </main>
+
     <footer class="footer">
       <div id="connection-status" class="status-item disconnected">WS: Disconnected</div>
       <div id="replay-status" class="status-item">Replay: —</div>
       <div id="data-status" class="status-item">Data: —</div>
     </footer>
+  </div>
+
+  <!-- How to read this -->
+  <div id="help" class="help-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="help-box">
+      <button id="help-close" class="help-close" aria-label="Close">✕</button>
+      <h2 id="help-title">How to read this indicator</h2>
+      <p><b>What it is.</b> A model trained on 10 years of JPM 1-minute data looks at each 5-minute candle as it closes and says
+        what is likely in the <b>next 10 minutes</b> and for the <b>rest of the day</b>. A past day is played back minute by minute
+        (pick it under <i>Day</i>, press <b>▶ Play</b>). The model only sees candles that have already closed, and nothing it said
+        is ever changed afterwards.</p>
+      <h3>The chart shows the whole day, 9:30 to 16:00</h3>
+      <ul>
+        <li><b>Left of the last candle</b> is what happened. <b>Right of it</b> is the prediction up to the close.</li>
+        <li><b>Rest of day</b>: the thick blue line is the expected price; the dashed lines are a likely high and low (the close lands between them about 9 days in 10).</li>
+        <li><b>Next 10 min</b>: a short yellow band after the last candle. If the call is <i>Flat</i>, the price should stay inside it.</li>
+        <li><b>Outlooks</b>: closing ranges fixed at 10:00 (blue) and 12:30 (purple), checked at the close.</li>
+        <li><b>Past calls</b>: ▲ Up / ▼ Down calls made earlier today, with ✓ or ✗ once their 10 minutes are over.</li>
+        <li><b>Levels</b>: green lines are support below the price, red lines resistance above (yesterday's high/low/close, the 9:30-10:00 opening range, today's high/low, pivots, swing points).</li>
+        <li>A <b>dimmed candle</b> is still forming. Calls are only made on finished candles.</li>
+      </ul>
+      <h3>The calls</h3>
+      <ul>
+        <li><b>Up / Flat / Down</b>: will the price move more than about 0.06% in the next 10 minutes, and which way. Guessing gets 33%; the model gets about 41% on two years of data it never saw.</li>
+        <li><b>Activity</b> (Quiet / Normal / Active) and <b>Big move risk</b> say how much the price is likely to move. This is the model's strongest skill.</li>
+        <li>Which <b>direction</b> a move goes is close to a coin flip. "Move expected, slight Up lean" means: expect movement, don't bet on the direction.</li>
+      </ul>
+      <h3>When not to trust it</h3>
+      <ul>
+        <li>On a single day the model can lose to "always flat" (about 1 day in 5). The <b>Signal log</b> scorecard shows how it is doing today against simple rules.</li>
+        <li>Around news, earnings or Fed announcements, moves can be bigger than any range shown.</li>
+        <li>It is not a trading system: trading every Up/Down call loses money after costs.</li>
+      </ul>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>

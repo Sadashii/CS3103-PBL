@@ -24,3 +24,14 @@ COST_BPS = 2.0                  # round-trip cost assumed per trade, in basis po
 DATA_DIR = ROOT / "data"
 MODEL_DIR = ROOT / "models"
 LOG_DIR = ROOT / "logs"
+
+DEFAULT_CUTOFF = "2026-10-27"   # last training session of the submitted models (D30)
+
+
+def trained_cutoff():
+    """Last session the deployed 3-class model was trained on; only later days may be replayed."""
+    import json
+    try:
+        return json.loads((MODEL_DIR / "cls3.json").read_text())["cutoff"]
+    except Exception:
+        return DEFAULT_CUTOFF

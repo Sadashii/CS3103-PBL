@@ -1,0 +1,341 @@
+{
+ "cutoff": "2026-10-27",
+ "features": [
+  "ret_1",
+  "ret_2",
+  "ret_3",
+  "ret_6",
+  "ret_12",
+  "ret_24",
+  "vol_12",
+  "vol_78",
+  "vol_390",
+  "vol_ratio",
+  "range_1",
+  "close_pos",
+  "rsi_14",
+  "macd_hist",
+  "bb_pctb",
+  "bb_width",
+  "vwap_dist",
+  "rel_vol",
+  "ret_day",
+  "gap",
+  "prev_day_ret",
+  "prev_day_vol",
+  "vol_vs_prev_day",
+  "slot",
+  "bars_left",
+  "dow",
+  "spy_ret_1",
+  "spy_ret_3",
+  "spy_ret_6",
+  "xlf_ret_3",
+  "xlf_ret_6",
+  "peer_ret_1",
+  "peer_ret_3",
+  "peer_ret_6",
+  "rel_spy_6",
+  "rel_peer_6",
+  "corr_spy_36",
+  "spy_vol_12",
+  "imb_tick_1",
+  "imb_tick_3",
+  "imb_tick_6",
+  "imb_tick_12",
+  "cumimb_tick",
+  "imb_clv_1",
+  "imb_clv_3",
+  "imb_clv_6",
+  "imb_clv_12",
+  "cumimb_clv",
+  "imb_bvc_1",
+  "imb_bvc_3",
+  "imb_bvc_6",
+  "imb_bvc_12",
+  "cumimb_bvc",
+  "delta_div_6",
+  "avg_trade",
+  "avg_trade_rel",
+  "trades_rel",
+  "vwap5_dist",
+  "vol_accel",
+  "spy_imb_clv_6",
+  "spy_imb_bvc_6",
+  "peer_imb_clv_6",
+  "open30_ret",
+  "dist_day_high",
+  "dist_day_low",
+  "day_range_pos",
+  "dist_prev_high",
+  "dist_prev_low",
+  "ret_skew_78",
+  "mom_390",
+  "jpm_news_30m",
+  "jpm_sent_30m",
+  "jpm_news_3h",
+  "jpm_sent_3h",
+  "jpm_news_1d",
+  "jpm_sent_1d",
+  "jpm_news_rel",
+  "jpm_mins_since_news",
+  "jpm_kw_upgrade_1d",
+  "jpm_kw_downgrade_1d",
+  "jpm_kw_pt_1d",
+  "jpm_kw_legal_1d",
+  "jpm_kw_earn_1d",
+  "jpm_kw_div_1d",
+  "mkt_news_30m",
+  "mkt_sent_30m",
+  "mkt_news_3h",
+  "mkt_sent_3h",
+  "mkt_news_1d",
+  "mkt_sent_1d",
+  "mkt_news_rel",
+  "mkt_mins_since_news",
+  "mins_since_earn",
+  "earn_today",
+  "earn_within_3d",
+  "mins_since_fomc",
+  "fomc_today",
+  "days_to_fomc",
+  "peer_earn_3d",
+  "jpm_8k_1d",
+  "jpm_insider_5d",
+  "jpm_13dg_5d",
+  "mins_since_periodic"
+ ],
+ "n_val": 53173,
+ "n_test": 32530,
+ "models": {
+  "always_up": {
+   "val": {
+    "acc": 0.5155247964192353,
+    "n": 53173
+   },
+   "test": {
+    "acc": 0.5093452197971103,
+    "n": 32530
+   }
+  },
+  "momentum_6": {
+   "val": {
+    "acc": 0.5036390649389728,
+    "n": 53173
+   },
+   "test": {
+    "acc": 0.4946203504457424,
+    "n": 32530
+   }
+  },
+  "rsi_meanrev": {
+   "val": {
+    "acc": 0.49164049423579637,
+    "n": 53173
+   },
+   "test": {
+    "acc": 0.5096833691976637,
+    "n": 32530
+   }
+  },
+  "lr": {
+   "val": {
+    "n": 53173,
+    "acc": 0.5064224324375153,
+    "auc": 0.5052394644451752,
+    "brier": 0.2506146171781358,
+    "logloss": 0.6946042260307937
+   },
+   "test": {
+    "n": 32530,
+    "acc": 0.5047955733169383,
+    "auc": 0.4910177146631355,
+    "brier": 0.25204614459025876,
+    "logloss": 0.6972895370163178
+   }
+  },
+  "lgb": {
+   "val": {
+    "n": 53173,
+    "acc": 0.5094878979933425,
+    "auc": 0.5083987928116039,
+    "brier": 0.25268594955304363,
+    "logloss": 0.6986583630570371
+   },
+   "test": {
+    "n": 32530,
+    "acc": 0.5101444820166,
+    "auc": 0.5080529953267516,
+    "brier": 0.2507678163949267,
+    "logloss": 0.6947094656377124
+   }
+  },
+  "ens": {
+   "val": {
+    "n": 53173,
+    "acc": 0.5118763282116864,
+    "auc": 0.5085469786634862,
+    "brier": 0.2509100797749735,
+    "logloss": 0.6949963806131837
+   },
+   "test": {
+    "n": 32530,
+    "acc": 0.5070089148478327,
+    "auc": 0.49928895085113556,
+    "brier": 0.2508489907402294,
+    "logloss": 0.6948628389213913
+   }
+  }
+ },
+ "deployed_classifier": "lr",
+ "calibration": {
+  "val": {
+   "ece_raw": 0.02401992373417746,
+   "ece_cal": 1.3164576009947595e-06,
+   "brier_raw": 0.25061461721574885,
+   "brier_cal": 0.24964098547836922
+  },
+  "test": {
+   "ece_raw": 0.0340759892906555,
+   "ece_cal": 0.010013898142911972,
+   "brier_raw": 0.25204614459025876,
+   "brier_cal": 0.25024710599320626
+  }
+ },
+ "rule": {
+  "threshold": 1.01,
+  "median_gate_bps": 0.0,
+  "selected_on": "NO CALLS: no rule passed nested validation (t >= 3 on unseen years)"
+ },
+ "nested": {
+  "rules": {
+   "2024": [
+    0.525,
+    0.5
+   ],
+   "2025": [
+    0.53,
+    0.5
+   ],
+   "2026": [
+    0.525,
+    1.0
+   ]
+  },
+  "n": 6119,
+  "net_bps": -2.74788005555091,
+  "t": -6.241245587551465,
+  "required_t": 3.0
+ },
+ "signals": {
+  "val": {
+   "cost_1bps": {
+    "n": 0,
+    "acc": NaN,
+    "net": NaN,
+    "t": NaN,
+    "total": 0.0
+   },
+   "cost_2bps": {
+    "n": 0,
+    "acc": NaN,
+    "net": NaN,
+    "t": NaN,
+    "total": 0.0
+   },
+   "cost_5bps": {
+    "n": 0,
+    "acc": NaN,
+    "net": NaN,
+    "t": NaN,
+    "total": 0.0
+   },
+   "coverage": 0.0
+  },
+  "test": {
+   "cost_1bps": {
+    "n": 0,
+    "acc": NaN,
+    "net": NaN,
+    "t": NaN,
+    "total": 0.0
+   },
+   "cost_2bps": {
+    "n": 0,
+    "acc": NaN,
+    "net": NaN,
+    "t": NaN,
+    "total": 0.0
+   },
+   "cost_5bps": {
+    "n": 0,
+    "acc": NaN,
+    "net": NaN,
+    "t": NaN,
+    "total": 0.0
+   },
+   "coverage": 0.0
+  },
+  "no_gate_test": {
+   "n": 0,
+   "acc": NaN,
+   "net": NaN,
+   "t": NaN,
+   "total": 0.0
+  }
+ },
+ "band": {
+  "alpha": 0.1,
+  "coverage_by_horizon": {
+   "1": {
+    "raw_val": 0.8979745359486958,
+    "raw_test": 0.898339993851829,
+    "cqr_test": 0.8999385182908085,
+    "q_val_bps": 0.10563114964011198,
+    "deployed_q_bps": -0.01952896597639224,
+    "n_test": 32530
+   },
+   "3": {
+    "raw_val": 0.8927463186203525,
+    "raw_test": 0.892376268060252,
+    "cqr_test": 0.9,
+    "q_val_bps": 0.6703102876568875,
+    "deployed_q_bps": 0.35864266024249986,
+    "n_test": 32530
+   },
+   "6": {
+    "raw_val": 0.886916292103135,
+    "raw_test": 0.8898247771288041,
+    "cqr_test": 0.9032892714417461,
+    "q_val_bps": 1.7662064107747666,
+    "deployed_q_bps": 1.00856826700579,
+    "n_test": 32530
+   },
+   "12": {
+    "raw_val": 0.8772779510753571,
+    "raw_test": 0.887886208863095,
+    "cqr_test": 0.9111006742929988,
+    "q_val_bps": 4.3175695372408125,
+    "deployed_q_bps": 1.7187151062634753,
+    "n_test": 29809
+   },
+   "24": {
+    "raw_val": 0.8668055939139823,
+    "raw_test": 0.8714215404806824,
+    "cqr_test": 0.9023459929456156,
+    "q_val_bps": 7.859401987410024,
+    "deployed_q_bps": 4.376958593292509,
+    "n_test": 24382
+   },
+   "48": {
+    "raw_val": 0.8371218982068466,
+    "raw_test": 0.8603980173115336,
+    "cqr_test": 0.9090034771029074,
+    "q_val_bps": 20.7298173978595,
+    "deployed_q_bps": 11.048190698678377,
+    "n_test": 13517
+   }
+  },
+  "note": "cqr_test = widened by the width fitted on validation only; deployed_q uses 2023..cutoff OOF"
+ }
+}

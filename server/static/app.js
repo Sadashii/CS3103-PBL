@@ -26,7 +26,8 @@ let signalLog = [];        // append-only log of signals
 let pendingSeek = false;   // prevent seek slider fighting with replay updates
 
 // Overlay visibility (persisted in localStorage)
-const OVERLAY_KEYS = ['rsi', 'macd', 'bb', 'vwap'];
+const OVERLAY_KEYS = ['fc', 'next', 'ol', 'calls', 'sr', 'vwap', 'bb', 'rsi', 'macd'];
+const OVERLAY_DEFAULTS = { fc: true, next: true, ol: true, calls: true, sr: true, vwap: true, bb: false, rsi: false, macd: false };
 let overlayVisibility = {};
 
 // ============================================================================
@@ -229,8 +230,8 @@ function updateSeekSlider(state) {
     cursorLabel.textContent = formatET(state.cursor).replace(' ET', '');
   }
 
-  document.getElementById('seek-start').textContent = state.first ? formatET(state.first).replace(' ET', '') : '09:30';
-  document.getElementById('seek-end').textContent = state.last ? formatET(state.last).replace(' ET', '') : '16:00';
+  document.getElementById('seek-start').textContent = state.open ? formatET(state.open).replace(':00 ET', '') : '09:30';
+  document.getElementById('seek-end').textContent = state.close ? formatET(state.close).replace(':00 ET', '') : '16:00';
 }
 
 function updateReplayStatus(state) {
@@ -278,7 +279,8 @@ const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h':
 const DEMO = new URLSearchParams(location.search).has('demo');   // ?demo=1 draws a SYNTHETIC forecast to check the layout
 let lastBars = [];
 let lastSignal = null;
-const OVERLAY_SERIES = { rsi: ['rsi'], macd: ['macd', 'macdSignal', 'macdHist'], bb: ['bbUpper', 'bbMiddle', 'bbLower'], vwap: ['vwap'] };
+const OVERLAY_SERIES = { rsi: ['rsi'], macd: ['macd', 'macdSignal', 'macdHist'], bb: ['bbUpper', 'bbMiddle', 'bbLower'], vwap: ['vwap'],
+                         fc: ['fcUpper', 'fcMedian', 'fcLower'], next: ['nxUpper', 'nxLower'], ol: ['olAmLo', 'olAmHi', 'olPmLo', 'olPmHi'] };
 
 function initCharts() {
   const el = document.getElementById('main-chart');
@@ -327,9 +329,19 @@ function initCharts() {
   chartSeries.macdSignal = c.addLineSeries({ color: '#f78166', lineWidth: 1, priceScaleId: 'macd', ...none });
 
   // forecast lines (future side of the chart)
-  chartSeries.fcUpper = c.addLineSeries({ color: '#d29922', lineWidth: 2, lineStyle: 2, title: 'upper 95%', priceLineVisible: false });
-  chartSeries.fcMedian = c.addLineSeries({ color: '#58a6ff', lineWidth: 2, title: 'forecast', priceLineVisible: false });
-  chartSeries.fcLower = c.addLineSeries({ color: '#a371f7', lineWidth: 2, lineStyle: 2, title: 'lower 5%', priceLineVisible: false });
+  chartSeries.fcUpper = c.addLineSeries({ color: '#d29922', lineWidth: 2, lineStyle: 2, title: 'likely high', priceLineVisible: false });
+  chartSeries.fcMedian = c.addLineSeries({ color: '#58a6ff', lineWidth: 3, title: 'expected', priceLineVisible: false });
+  chartSeries.fcLower = c.addLineSeries({ color: '#a371f7', lineWidth: 2, lineStyle: 2, title: 'likely low', priceLineVisible: false });
+  // next 10 minutes: the Neutral range right after the last closed candle
+  const nx = { color: '#e3b341', lineWidth: 3, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  chartSeries.nxUpper = c.addLineSeries(nx);
+  chartSeries.nxLower = c.addLineSeries(nx);
+  // session outlooks: likely closing range (50%), fixed when made
+  const ol = (color) => ({ color, lineWidth: 1, lineStyle: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  chartSeries.olAmLo = c.addLineSeries(ol('rgba(121,192,255,0.8)'));
+  chartSeries.olAmHi = c.addLineSeries(ol('rgba(121,192,255,0.8)'));
+  chartSeries.olPmLo = c.addLineSeries(ol('rgba(210,168,255,0.9)'));
+  chartSeries.olPmHi = c.addLineSeries(ol('rgba(210,168,255,0.9)'));
 
   loadOverlayVisibility();
   applyOverlayVisibility();
@@ -352,6 +364,9 @@ function applyLayout() {
 }
 
 function applyOverlayVisibility() {
+  drawLevels();
+  if (lastBars.length && chartSeries.candles) drawForecast();
+  renderLegend();
   Object.entries(OVERLAY_SERIES).forEach(([key, names]) => {
     names.forEach(n => chartSeries[n].applyOptions({ visible: !!overlayVisibility[key] }));
     document.querySelectorAll(`.toggle-btn[data-overlay="${key}"]`)
@@ -365,7 +380,7 @@ function applyOverlayVisibility() {
 // ============================================================================
 
 async function loadBars(tf = currentTf, before = null, limit = 2000) {
-  const params = new URLSearchParams({ tf, session: 'rth', limit: limit.toString() });
+  const params = new URLSearchParams({ tf, session: 'rth', limit: limit.toString(), partial: before ? '0' : '1' });
   if (before) params.append('before', before.toString());
   try {
     const res = await fetch(`${API_BASE}/bars?${params}`);
@@ -392,34 +407,51 @@ async function loadInitialChartData() {
 function futureTimes() {
   const sec = TF_SEC[currentTf] || 300;
   if (sec >= 14400 || !lastBars.length || !replayState) return [];
-  const last = lastBars[lastBars.length - 1].time;
+  const last = formingBar ? formingBar.time : lastBars[lastBars.length - 1].time;
   let t = last < replayState.open ? replayState.open : last + sec;
   const out = [];
   for (; t < replayState.close; t += sec) out.push(t);
   return out;
 }
 
+var formingBar = null;     // candle still forming at the cursor: drawn dimmed, never used for a signal
 function updateCharts(bars) {
   if (!bars || bars.length === 0) return;
-  lastBars = bars;
+  formingBar = bars.length && bars[bars.length - 1].partial ? bars[bars.length - 1] : null;
+  const closed = formingBar ? bars.slice(0, -1) : bars;
+  lastBars = closed;
+  const dim = (b) => b.close >= b.open ? 'rgba(63,185,80,0.35)' : 'rgba(248,81,73,0.35)';
   chartSeries.candles.setData([
-    ...bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })),
+    ...closed.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })),
+    ...(formingBar ? [{ time: formingBar.time, open: formingBar.open, high: formingBar.high, low: formingBar.low, close: formingBar.close,
+                        color: dim(formingBar), borderColor: dim(formingBar), wickColor: dim(formingBar) }] : []),
     ...futureTimes().map(time => ({ time })),
   ]);
   chartSeries.volume.setData(bars.map(b => ({
-    time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(63,185,80,0.45)' : 'rgba(248,81,73,0.45)',
+    time: b.time, value: b.volume, color: b.partial ? 'rgba(139,148,158,0.3)' : b.close >= b.open ? 'rgba(63,185,80,0.45)' : 'rgba(248,81,73,0.45)',
   })));
-  computeOverlays(bars);
+  computeOverlays(closed);
   drawForecast();
-  centerOnCursor();
+  drawOutlooks();
+  fitSession();
 }
 
-// The newest closed candle sits in the middle of the chart; the right half is the future.
-function centerOnCursor() {
-  const n = lastBars.length;
-  if (!n) return;
-  const half = 45;
-  charts.main.timeScale().setVisibleLogicalRange({ from: n - 1 - half, to: n - 1 + half });
+// Always show the whole session, 09:30 to 16:00: what happened on the left, the prediction on the right.
+// (A few candles of the previous day are kept on the left before the open, so the chart is never empty.)
+function fitSession() {
+  const n = lastBars.length + (formingBar ? 1 : 0);
+  if (!n || !replayState) return;
+  let first = lastBars.findIndex(b => b.time >= replayState.open);
+  if (first < 0) first = lastBars.length;
+  const total = n + futureTimes().length;
+  const sec = TF_SEC[currentTf] || 300;
+  const lead = Math.max(3, Math.round(1800 / sec));          // ~30 min of yesterday for context
+  charts.main.timeScale().setVisibleLogicalRange({ from: Math.max(0, first - lead) - 0.5, to: total - 0.5 });
+}
+function snapTime(t) {             // put a timestamp on the current candle grid so prediction lines don't add slots
+  const sec = TF_SEC[currentTf] || 300;
+  if (!replayState || sec >= 14400) return t;
+  return replayState.open + Math.floor((t - replayState.open) / sec) * sec;
 }
 
 function computeOverlays(bars) {
@@ -452,24 +484,72 @@ function computeOverlays(bars) {
   }
 }
 
-// Forecast lines + direction arrow, drawn from the signal endpoint.
+// Prediction layers drawn from the signal endpoint: rest-of-day path, next-10-min range, call markers.
+var logEntries = [];        // graded signal log (for the past-call markers)
+function callMarkerTime(ts) { return snapTime(ts - 1); }      // a call made at 10:05 belongs to the candle that closed then
 function drawForecast() {
   const last = lastBars[lastBars.length - 1];
-  const band = lastSignal && lastSignal.forecast_band;
+  const sig = lastSignal;
+  const c3 = sig && sig.call3;
+  const sec = TF_SEC[currentTf] || 300;
+  // markers: past Up/Down calls (graded ✓/✗) + the current call
+  const markers = [];
+  if (overlayVisibility.calls && sec <= 300) {
+    logEntries.filter(e => e.direction === 'Up' || e.direction === 'Down').forEach(e => {
+      const up = e.direction === 'Up';
+      markers.push({ time: callMarkerTime(e.time), position: up ? 'belowBar' : 'aboveBar', shape: up ? 'arrowUp' : 'arrowDown',
+                     color: e.status === 'win' ? (up ? '#3fb950' : '#f85149') : e.status === 'loss' ? '#6e7681' : (up ? '#3fb950' : '#f85149'),
+                     text: e.status === 'win' ? '✓' : e.status === 'loss' ? '✗' : '' });
+    });
+  }
+  if (c3 && sig.timestamp && c3.call !== 'No call') {
+    const t = callMarkerTime(sig.timestamp);
+    const up = c3.call === 'Up', down = c3.call === 'Down';
+    const cur = { time: t, position: up ? 'belowBar' : 'aboveBar', shape: up ? 'arrowUp' : down ? 'arrowDown' : 'circle',
+                  color: up ? '#3fb950' : down ? '#f85149' : '#8b949e', text: `NOW: ${c3.call} ${Math.round(c3.confidence * 100)}%` };
+    const k = markers.findIndex(m => m.time === t);
+    if (k >= 0) markers.splice(k, 1);
+    markers.push(cur);
+  }
+  markers.sort((a, b) => a.time - b.time);
+  chartSeries.candles.setMarkers(markers);
+
+  // next 10 minutes: the range the price stays in if the call is Neutral
+  if (c3 && c3.neutral_band_price && sig.timestamp && c3.call !== 'No call') {
+    const t1 = snapTime(sig.timestamp), t2 = snapTime(sig.timestamp + c3.horizon_min * 60 - 1);
+    const pts = t2 > t1 ? [t1, t2] : [t1, t1 + sec];
+    chartSeries.nxUpper.setData(pts.map(time => ({ time, value: c3.neutral_band_price[1] })));
+    chartSeries.nxLower.setData(pts.map(time => ({ time, value: c3.neutral_band_price[0] })));
+  } else { chartSeries.nxUpper.setData([]); chartSeries.nxLower.setData([]); }
+
+  // rest of the day
+  const band = sig && sig.forecast_band;
   const clear = () => ['fcUpper', 'fcMedian', 'fcLower'].forEach(n => chartSeries[n].setData([]));
-  const dir = lastSignal && lastSignal.direction;
-  chartSeries.candles.setMarkers(last && (dir === 'Up' || dir === 'Down') ? [{
-    time: last.time, position: dir === 'Up' ? 'belowBar' : 'aboveBar',
-    color: dir === 'Up' ? '#3fb950' : '#f85149', shape: dir === 'Up' ? 'arrowUp' : 'arrowDown',
-    text: `${dir} ${Math.round((lastSignal.confidence || 0) * 100)}%`,
-  }] : []);
   if (!last || !band || !band.times || !band.times.length) { clear(); return; }
-  const idx = band.times.map((t, i) => i).filter(i => band.times[i] > last.time);
-  const line = (arr) => [{ time: last.time, value: last.close }, ...idx.map(i => ({ time: band.times[i], value: arr[i] }))];
+  const seen = new Set([last.time]);
+  const idx = [];
+  band.times.forEach((t, i) => { const st = snapTime(t); if (t > last.time && st > last.time && !seen.has(st)) { seen.add(st); idx.push([st, i]); } });
+  const line = (arr) => [{ time: last.time, value: last.close }, ...idx.map(([st, i]) => ({ time: st, value: arr[i] }))];
   chartSeries.fcUpper.setData(line(band.upper));
   chartSeries.fcLower.setData(line(band.lower));
   chartSeries.fcMedian.setData(line(band.median));
-  chartSeries.fcMedian.applyOptions({ color: dir === 'Up' ? '#3fb950' : dir === 'Down' ? '#f85149' : '#58a6ff' });
+}
+
+// Session outlooks (10:00 and 12:30): likely closing range, drawn from when it was made to the close.
+var olData = null;
+function drawOutlooks() {
+  const pairs = [['olAmLo', 'olAmHi'], ['olPmLo', 'olPmHi']];
+  pairs.forEach(([lo, hi], k) => {
+    const o = olData && olData.outlooks && olData.outlooks[k];
+    if (!o || !o.band50 || !replayState) { chartSeries[lo].setData([]); chartSeries[hi].setData([]); return; }
+    const sec = TF_SEC[currentTf] || 300;
+    const t1 = snapTime(o.made_at), t2 = snapTime(replayState.close - sec);
+    if (t2 <= t1) { chartSeries[lo].setData([]); chartSeries[hi].setData([]); return; }
+    chartSeries[lo].setData([{ time: t1, value: o.band50.lower }, { time: t2, value: o.band50.lower }]);
+    chartSeries[hi].setData([{ time: t1, value: o.band50.upper }, { time: t2, value: o.band50.upper }]);
+    chartSeries[hi].setMarkers([{ time: t1, position: 'aboveBar', shape: 'square', color: k ? '#d2a8ff' : '#79c0ff',
+                                  text: (k ? '12:30' : '10:00') + ' outlook' + (o.status === 'graded' ? (o.in50 ? ' ✓' : ' ✗') : '') }]);
+  });
 }
 
 // SYNTHETIC forecast, only with ?demo=1, to check the layout before a model exists.
@@ -623,8 +703,8 @@ function setupReplayControls() {
 
   // Seek slider
   const slider = document.getElementById('seek-slider');
-  slider.addEventListener('mousedown', () => { pendingSeek = true; });
-  slider.addEventListener('mouseup', (e) => {
+  slider.addEventListener('pointerdown', () => { pendingSeek = true; });
+  slider.addEventListener('change', (e) => {
     pendingSeek = false;
     if (replayState && replayState.first && replayState.last) {
       const total = replayState.last - replayState.first;
@@ -686,14 +766,14 @@ function setupOverlayToggles() {
 
 function loadOverlayVisibility() {
   OVERLAY_KEYS.forEach(key => {
-    const saved = localStorage.getItem(`ov2_${key}`);
-    overlayVisibility[key] = saved !== 'false'; // Default true
+    const saved = localStorage.getItem(`ov3_${key}`);
+    overlayVisibility[key] = saved === null ? OVERLAY_DEFAULTS[key] : saved === 'true';
   });
 }
 
 function saveOverlayVisibility() {
   OVERLAY_KEYS.forEach(key => {
-    localStorage.setItem(`ov2_${key}`, overlayVisibility[key].toString());
+    localStorage.setItem(`ov3_${key}`, overlayVisibility[key].toString());
   });
 }
 
@@ -708,7 +788,6 @@ async function fetchSignal(cursor) {
     if (DEMO && !(data.forecast_band && data.forecast_band.times.length)) data = demoSignal(data);
     lastSignal = data;
     renderSignal(data);
-    renderForecast(data);
     renderScenarios(data);
     drawForecast();
     // Add to log if it's a new signal (different from last); never log the synthetic demo
@@ -721,80 +800,69 @@ async function fetchSignal(cursor) {
 function renderSignal(data) {
   const dirEl = document.getElementById('signal-direction');
   const confEl = document.getElementById('signal-confidence');
-  const priceEl = document.getElementById('signal-price');
-  const timeEl = document.getElementById('signal-time');
-
-  const dir = data.direction || 'No signal';
-  dirEl.textContent = dir;
-  dirEl.className = 'signal-direction ' + directionClass(dir).replace('dir-', '');
-
-  const conf = data.confidence !== undefined ? data.confidence : 0;
-  confEl.textContent = (dir === 'No signal' && data.lean) ? `Lean ${data.lean} · ${formatPct(conf)} (below call threshold)` : `Confidence: ${formatPct(conf)}`;
-  confEl.className = 'signal-confidence ' + confidenceClass(conf);
-
-  priceEl.textContent = `Price: ${formatPrice(data.price)}`;
-
-  timeEl.textContent = `As of: ${data.timestamp ? formatET(data.timestamp) : '—'}`;
-}
-
-function renderForecast(data) {
-  const container = document.getElementById('forecast-chart');
-  const band = data.forecast_band || {};
-
-  if (!band.times || band.times.length === 0) {
-    container.innerHTML = '<div class="no-data">No forecast available</div>';
+  const barEl = document.getElementById('prob-bar');
+  const actEl = document.getElementById('signal-activity');
+  const bandEl = document.getElementById('signal-band');
+  const bigEl = document.getElementById('signal-big');
+  const nowEl = document.getElementById('now-summary');
+  const c3 = data.call3;
+  document.getElementById('signal-time').textContent = data.timestamp && data.price ? `as of ${formatET(data.timestamp).replace(' ET', '')} ET · price ${formatPrice(data.price)}` : '';
+  [barEl, actEl, bandEl, bigEl].forEach(e => { e.innerHTML = ''; });
+  dirEl.style.fontSize = '';
+  if (!c3 || data.price === null || data.price === undefined) {
+    dirEl.textContent = 'Waiting'; dirEl.className = 'signal-direction no-signal';
+    confEl.textContent = 'The first call comes when the 9:30-9:35 candle closes.';
+    nowEl.innerHTML = replayState && replayState.cursor < replayState.open
+      ? 'The market has not opened yet. Press <b>▶ Play</b> to start the day; the first call appears at 9:35.'
+      : 'Waiting for the first closed candle…';
     return;
   }
-
-  // Simple SVG sparkline for the forecast band
-  const width = container.clientWidth || 300;
-  const height = 140;
-  const padding = 20;
-  const innerWidth = width - padding * 2;
-  const innerHeight = height - padding * 2;
-
-  const times = band.times;
-  const upper = band.upper;
-  const median = band.median;
-  const lower = band.lower;
-
-  if (!upper.length || !median.length || !lower.length) {
-    container.innerHTML = '<div class="no-data">Incomplete forecast data</div>';
+  document.getElementById('signal-horizon').textContent = `call made every 5 min, checked ${c3.horizon_min} min later`;
+  if (c3.call === 'No call') {
+    dirEl.textContent = 'No call'; dirEl.className = 'signal-direction no-signal';
+    confEl.textContent = `Less than ${c3.horizon_min} minutes to the close.`;
+    nowEl.innerHTML = 'The session is closing: no new calls. Scroll down to the <b>Signal log</b> to see how today went.';
     return;
   }
+  const p = c3.probs, call = c3.call, pct = x => `${Math.round(x * 100)}%`;
+  const weak = call !== 'Neutral' && Math.abs(p.Up - p.Down) < 0.05;          // direction is close to a coin flip
+  dirEl.textContent = call === 'Neutral' ? 'Flat (Neutral)' : weak ? `Move expected, slight ${call} lean` : call;
+  dirEl.className = 'signal-direction ' + (call === 'Up' ? 'up' : call === 'Down' ? 'down' : 'no-signal');
+  if (weak) dirEl.style.fontSize = '20px';
+  confEl.textContent = `${pct(c3.confidence)} likely (guessing would be 33%)`;
+  confEl.className = 'signal-confidence ' + (c3.confidence >= 0.45 ? 'conf-high' : c3.confidence >= 0.38 ? 'conf-med' : 'conf-low');
+  barEl.innerHTML = `<div class="pb up" style="flex:${p.Up}">Up ${pct(p.Up)}</div><div class="pb flat" style="flex:${p.Neutral}">Flat ${pct(p.Neutral)}</div><div class="pb down" style="flex:${p.Down}">Down ${pct(p.Down)}</div>`;
+  const [lo, hi] = c3.neutral_band_price;
+  bandEl.textContent = `"Flat" means the price stays between ${formatPrice(lo)} and ${formatPrice(hi)} (±${c3.neutral_band_bps} bps).`;
+  if (c3.activity) {
+    actEl.innerHTML = `Activity: <b>${c3.activity}</b> <span class="muted">(${pct(c3.act_conf)})</span>`;
+    actEl.className = 'signal-activity act-' + c3.activity.toLowerCase();
+  }
+  bigEl.innerHTML = c3.big_move ? `⚠ <b>Big move risk: ${pct(c3.p_big)}</b> chance of a move over ${c3.big_move_bps} bps (usual 20%)`
+                                : `Big move risk: ${pct(c3.p_big)} <span class="muted">(usual 20%)</span>`;
+  bigEl.className = 'signal-big ' + (c3.big_move ? 'warn' : '');
 
-  // Find min/max for scaling
-  const allValues = [...upper, ...median, ...lower].filter(v => v !== null && v !== undefined);
-  const minVal = Math.min(...allValues);
-  const maxVal = Math.max(...allValues);
-  const range = maxVal - minVal || 1;
-
-  const xScale = (i) => padding + (i / (times.length - 1)) * innerWidth;
-  const yScale = (v) => padding + innerHeight - ((v - minVal) / range) * innerHeight;
-
-  // Build paths
-  const upperPath = upper.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' ');
-  const medianPath = median.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' ');
-  const lowerPath = lower.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' ');
-
-  // Fill between upper and lower
-  const fillPath = upperPath + ' ' + lowerPath.split(' ').reverse().join(' ');
-
-  container.innerHTML = `
-    <svg width="${width}" height="${height}" style="display:block;">
-      <defs>
-        <linearGradient id="band-gradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#d29922" stop-opacity="0.15"/>
-          <stop offset="50%" stop-color="#58a6ff" stop-opacity="0.1"/>
-          <stop offset="100%" stop-color="#a371f7" stop-opacity="0.15"/>
-        </linearGradient>
-      </defs>
-      <path d="M${fillPath}Z" fill="url(#band-gradient)" stroke="none"/>
-      <polyline fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4,3" points="${upperPath}"/>
-      <polyline fill="none" stroke="#58a6ff" stroke-width="2" points="${medianPath}"/>
-      <polyline fill="none" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="4,3" points="${lowerPath}"/>
-    </svg>
-  `;
+  // plain-English summary
+  const say = [];
+  if (call === 'Neutral') say.push(`<b>Expect JPM to stay roughly flat</b> for the next ${c3.horizon_min} minutes, between ${formatPrice(lo)} and ${formatPrice(hi)}.`);
+  else if (weak) say.push(`<b>Expect the price to move</b> out of ${formatPrice(lo)}–${formatPrice(hi)} in the next ${c3.horizon_min} minutes, but the direction is close to a coin flip (Up ${pct(p.Up)} vs Down ${pct(p.Down)}).`);
+  else say.push(`<b>Leaning ${call}</b> for the next ${c3.horizon_min} minutes (${pct(c3.confidence)}; guessing gives 33%). Direction calls are the model's weakest part, so treat this as a hint.`);
+  if (c3.big_move) say.push(`⚠ A <b>large move</b> (over ${c3.big_move_bps} bps) is more likely than usual: ${pct(c3.p_big)} vs 20%.`);
+  else if (c3.activity === 'Quiet') say.push('Trading is expected to be <b>quiet</b>.');
+  else if (c3.activity === 'Active') say.push('Trading is expected to be <b>active</b>: bigger swings than usual.');
+  if (lvData && lvData.levels && lvData.levels.length) {
+    const px = data.price, bps = (l) => Math.abs(l.price / px - 1) * 1e4;
+    const r = lvData.levels.find(l => l.price > px), sp = [...lvData.levels].reverse().find(l => l.price < px);
+    const part = [];
+    if (r) part.push(`resistance <b>${formatPrice(r.price)}</b> (${r.label}, ${bps(r).toFixed(0)} bps up)`);
+    if (sp) part.push(`support <b>${formatPrice(sp.price)}</b> (${sp.label}, ${bps(sp).toFixed(0)} bps down)`);
+    if (part.length) say.push('Nearest ' + part.join(', ') + '.');
+  }
+  if (data.forecast_band && data.forecast_band.median && data.forecast_band.median.length) {
+    const fb = data.forecast_band, n = fb.median.length - 1;
+    say.push(`By the close: most likely around <b>${formatPrice(fb.median[n])}</b>, almost surely between ${formatPrice(fb.lower[n])} and ${formatPrice(fb.upper[n])}.`);
+  }
+  nowEl.innerHTML = say.map(x => `<p>${x}</p>`).join('');
 }
 
 function renderScenarios(data) {
@@ -805,7 +873,7 @@ function renderScenarios(data) {
     document.getElementById(`prob-${key}`).textContent = s.probability !== undefined ? formatPct(s.probability) : '—';
     document.getElementById(`desc-${key}`).textContent = s.description || '—';
     document.getElementById(`path-${key}`).textContent = s.path && s.path.length
-      ? s.path.map(p => formatPrice(p)).join(' → ')
+      ? `now ${formatPrice(s.path[0])} → +30 min ${formatPrice(s.path[Math.min(5, s.path.length - 1)])} → close ${formatPrice(s.path[s.path.length - 1])}`
       : '—';
   });
 }
@@ -826,19 +894,53 @@ function addToSignalLog() {
 async function refreshSignalLog() {
   try {
     const d = await (await fetch(`${API_BASE}/signals?calls_only=true`)).json();
-    renderSignalLog(d.signals || [], d.summary || {});
+    logEntries = d.signals || [];
+    renderSignalLog(logEntries, d.summary || {});
+    if (lastBars.length) drawForecast();
   } catch (e) { console.error('[API] signal log failed:', e); }
 }
 
 function renderSignalLog(entries, sum) {
   const tbody = document.querySelector('#signal-log tbody');
   const box = document.getElementById('log-summary');
-  if (box) {
+  if (box && sum.scheme === '3-class') {
+    const b = sum.baselines || {};
+    const pc = x => x === undefined || x === null ? '—' : `${Math.round(x * 100)}%`;
+    if (!sum.graded) box.innerHTML = `<span class="muted">${sum.calls} calls so far; each is checked ${sum.horizon_min} minutes after it is made.</span>`;
+    else {
+      const chip = (name, v, model) => `<span class="chip ${model ? 'model' : v > sum.accuracy ? 'beats' : ''}"><span>${name}</span><b>${pc(v)}</b></span>`;
+      box.innerHTML = `<div class="chips">${chip('Model', sum.accuracy, true)}${chip('Always flat', b.always_neutral)}${chip('Always up', b.always_up)}` +
+        `${chip('RSI rule', b.rsi_rule)}${chip('Repeat last move', b.persistence)}</div>` +
+        `<div class="muted">Calls right today, out of ${sum.graded} checked (guessing gets 33%). A grey chip beaten by a red one means a simple rule is doing better today.` +
+        (sum.act_accuracy != null ? ` Activity right ${pc(sum.act_accuracy)} vs ${pc(sum.act_persistence)} for "repeat last move".` : '') +
+        ` Big-move warnings: ${sum.big_flags}, ${sum.big_hit} came true. Trading every Up/Down call: ${sum.net_bps >= 0 ? '+' : ''}${sum.net_bps} bps after costs.</div>`;
+    }
+  } else if (box) {
     box.textContent = sum.candles === undefined ? '' :
       `${sum.calls} calls of ${sum.candles} candles · graded ${sum.graded}` +
       (sum.graded ? ` · accuracy ${(sum.accuracy * 100).toFixed(0)}% · net ${sum.net_bps >= 0 ? '+' : ''}${sum.net_bps} bps after ${sum.cost_bps} bps cost` : '');
   }
   tbody.innerHTML = '';
+  if (sum.scheme === '3-class') {
+    const th = document.getElementById('log-after'); if (th) th.textContent = `Price +${sum.horizon_min}m`;
+    entries.slice().reverse().forEach(e => {
+      const open = e.status === 'open';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatET(e.time)}</td>
+        <td class="${directionClass(e.direction)}">${e.direction === 'Neutral' ? 'Flat' : e.direction}</td>
+        <td title="Up ${formatPct(e.p_up)} · Neutral ${formatPct(e.p_neutral)} · Down ${formatPct(e.p_down)}">${formatPct(e.confidence)}</td>
+        <td class="act-${(e.activity || '').toLowerCase()}">${e.activity || '—'}</td>
+        <td class="${e.big_move ? 'dir-down' : 'dir-none'}">${e.big_move ? '⚠ yes' : 'no'}</td>
+        <td>${formatPrice(e.price)}</td>
+        <td>${open ? '—' : formatPrice(e.price_after)}${open ? '' : ` <span class="dir-none">(${e.outcome_bps > 0 ? '+' : ''}${e.outcome_bps})</span>`}</td>
+        <td class="${open ? '' : directionClass(e.actual)}">${open ? 'waiting…' : e.actual === 'Neutral' ? 'Flat' : e.actual}</td>
+        <td class="${e.status === 'win' ? 'dir-up' : e.status === 'loss' ? 'dir-down' : ''}">${open ? '…' : e.status === 'win' ? '✓' : '✗'}</td>
+        <td class="${open ? '' : e.act_ok ? 'dir-up' : 'dir-down'}">${open || !e.act_actual ? '…' : `${e.act_actual} ${e.act_ok ? '✓' : '✗'}`}</td>`;
+      tbody.appendChild(tr);
+    });
+    return;
+  }
   entries.slice().reverse().forEach(e => {
     const res = e.status === 'open' ? 'open' : `${e.status === 'win' ? '✓' : '✗'} ${e.outcome_bps > 0 ? '+' : ''}${e.outcome_bps} bps`;
     const tr = document.createElement('tr');
@@ -877,8 +979,7 @@ updateClock();
 
 function onNewBar(bar, state) {
   // The server only returns CLOSED candles: reload when this minute completes one.
-  const sec = TF_SEC[currentTf] || 300;
-  if (sec > 3600 || ((state.cursor + 60 - state.open) % sec) === 0) loadInitialChartData();
+  loadInitialChartData();
 }
 
 // ============================================================================
@@ -993,60 +1094,248 @@ async function fetchBacktest() {
 fetchBacktest();
 
 
+
+
 // ============================================================================
-// Daily candles + close forecast (today's close during the session, next session's close after it)
+// Support / resistance: price lines on the candle chart + nearest levels panel (all from bars closed at the cursor)
 // ============================================================================
 
-let dailyChart = null, dcCandles = null, dcUp = null, dcMed = null, dcLow = null, dcKey = null;
-
-function initDailyChart() {
-  const el = document.getElementById('daily-chart');
-  dailyChart = LightweightCharts.createChart(el, {
-    autoSize: true,
-    layout: { background: { color: '#0d1117' }, textColor: '#e6edf3', fontSize: 11 },
-    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-    rightPriceScale: { borderColor: '#30363d' },
-    timeScale: { borderColor: '#30363d', timeVisible: false, rightOffset: 6 },
-    localization: { timeFormatter: (t) => new Date(t * 1000).toISOString().slice(0, 10) },
+var lvData = null, lvLines = [], lvKey = null;   // var: drawLevels can run before this line is reached
+function drawLevels() {
+  lvLines.forEach(l => chartSeries.candles && chartSeries.candles.removePriceLine(l));
+  lvLines = [];
+  document.querySelectorAll('.toggle-btn[data-overlay="sr"]').forEach(b => b.classList.toggle('active', !!overlayVisibility.sr));
+  if (!lvData || !overlayVisibility.sr || !chartSeries.candles) return;
+  // keep the chart readable: only the 3 nearest levels on each side of the price
+  const sup = lvData.levels.filter(l => l.side === 'support').slice(-3);
+  const res = lvData.levels.filter(l => l.side === 'resistance').slice(0, 3);
+  [...sup, ...res].forEach(l => {
+    const sup = l.side === 'support';
+    lvLines.push(chartSeries.candles.createPriceLine({
+      price: l.price, color: sup ? 'rgba(63,185,80,0.75)' : 'rgba(248,81,73,0.75)',
+      lineWidth: l.major ? 2 : 1, lineStyle: l.label === 'Swing' ? 3 : (l.major ? 0 : 2),
+      axisLabelVisible: true, title: l.label,
+    }));
   });
-  dcCandles = dailyChart.addCandlestickSeries({
-    upColor: '#3fb950', downColor: '#f85149', borderUpColor: '#3fb950', borderDownColor: '#f85149',
-    wickUpColor: '#3fb950', wickDownColor: '#f85149',
-  });
-  const f = { priceLineVisible: false, lastValueVisible: true };
-  dcUp = dailyChart.addLineSeries({ color: '#d29922', lineWidth: 2, lineStyle: 2, title: '90% upper', ...f });
-  dcMed = dailyChart.addLineSeries({ color: '#58a6ff', lineWidth: 2, title: 'median', ...f });
-  dcLow = dailyChart.addLineSeries({ color: '#a371f7', lineWidth: 2, lineStyle: 2, title: '90% lower', ...f });
 }
 
-async function fetchDaily() {
+async function fetchLevels() {
   try {
-    const d = await (await fetch(`${API_BASE}/daily?limit=260`)).json();
-    if (!dailyChart) initDailyChart();
-    const last = d.bars[d.bars.length - 1];
-    const fc = d.forecast;
-    const primary = fc ? (fc.live || fc.model_from_prev_close) : null;
-    const key = `${d.bars.length}|${last && last.close}|${primary && primary.median}`;
-    if (key === dcKey) return;
-    dcKey = key;
-    dcCandles.setData(d.bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
-    document.getElementById('dc-sub').textContent = d.in_progress ? '(today is still in progress)' : '(session closed)';
-    const note = document.getElementById('dc-note');
-    if (!fc) { [dcUp, dcMed, dcLow].forEach(s => s.setData([])); note.textContent = 'Forecast not available.'; return; }
-    const seg = v => [{ time: fc.anchor_time, value: fc.anchor_close }, { time: fc.target_time, value: v }];
-    dcUp.setData(seg(primary.band90.upper));
-    dcMed.setData(seg(primary.median));
-    dcLow.setData(seg(primary.band90.lower));
-    dcMed.setMarkers([{ time: fc.target_time, position: 'aboveBar', color: '#58a6ff', shape: 'circle',
-                        text: `${fc.label}: ${primary.median.toFixed(2)}` }]);
-    dailyChart.timeScale().fitContent();
-    const pc = x => (x * 100).toFixed(0) + '%', m = fc.model_from_prev_close;
-    let html = `<div><b>${fc.label}</b>: median <b>${primary.median.toFixed(2)}</b>, 90% band ${primary.band90.lower.toFixed(2)} – ${primary.band90.upper.toFixed(2)}, 50% band ${primary.band50.lower.toFixed(2)} – ${primary.band50.upper.toFixed(2)}.</div>`;
-    if (fc.live) html += `<div>Live (updated each minute, ${fc.live.minutes_left} min left): P(close above now ${fc.live.price_now.toFixed(2)}) ${pc(fc.live.p_above_now)}.</div>`;
-    html += `<div>From the previous close ${fc.anchor_close.toFixed(2)}: median ${m.median.toFixed(2)}, P(up) ${pc(m.p_up)} (${m.as_of}).</div>`;
-    html += `<div style="opacity:.7">The band is the useful part. The up/down odds are close to the base rate; no reliable directional edge was found.</div>`;
-    note.innerHTML = html;
-  } catch (e) { console.error('[API] daily failed:', e); }
+    const d = await (await fetch(`${API_BASE}/levels`)).json();
+    if (d.timestamp === lvKey) return;
+    lvKey = d.timestamp;
+    lvData = d;
+    drawLevels();
+    if (lastSignal) renderSignal(lastSignal);
+    const body = document.getElementById('lv-body');
+    if (!d.levels.length) { body.textContent = 'No history yet'; return; }
+    document.getElementById('lv-sub').textContent = `(price ${d.price.toFixed(2)})`;
+    const row = l => `<tr title="${l.desc}"><td style="color:${l.side === 'support' ? '#3fb950' : '#f85149'};white-space:nowrap"><b>${l.label}</b>${l.strength > 1 ? ` <span style="opacity:.6">x${l.strength}</span>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">${l.price.toFixed(2)}</td>
+      <td style="text-align:right;white-space:nowrap">${l.dist_bps >= 0 ? '+' : ''}${l.dist_bps.toFixed(0)} bps</td></tr>`;
+    const res = d.levels.filter(l => l.side === 'resistance').slice(0, 3).reverse();
+    const sup = d.levels.filter(l => l.side === 'support').slice(-3).reverse();
+    const ns = d.nearest_support, nr = d.nearest_resistance;
+    const room = (ns && nr) ? `Room: ${nr.dist_bps.toFixed(0)} bps up to ${nr.label}, ${(-ns.dist_bps).toFixed(0)} bps down to ${ns.label}.` : '';
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+        ${res.map(row).join('')}
+        <tr><td colspan="3" style="border-top:1px dashed #30363d;border-bottom:1px dashed #30363d;padding:2px 0;text-align:center;opacity:.8">now ${d.price.toFixed(2)}</td></tr>
+        ${sup.map(row).join('')}</table>
+      <div style="margin-top:4px">${room}${d.opening_range_done ? '' : ' Opening range forms at 10:00.'}</div>
+      <div style="opacity:.7;margin-top:4px">Rule-based reference prices, not model output; hover a row for what it is, xN = levels merged. Prior session ${d.prev_day.day}: H ${d.prev_day.high.toFixed(2)} L ${d.prev_day.low.toFixed(2)} C ${d.prev_day.close.toFixed(2)}.</div>`;
+  } catch (e) { console.error('[API] levels failed:', e); }
 }
-setInterval(fetchDaily, 3000);
-fetchDaily();
+setInterval(fetchLevels, 2000);
+fetchLevels();
+
+// ============================================================================
+// Session outlook: two rest-of-day calls a day, frozen when made (10:00, 12:30) and graded at the close
+// ============================================================================
+
+var olKey = null;
+async function fetchOutlook() {
+  try {
+    const d = await (await fetch(`${API_BASE}/outlook`)).json();
+    olData = d;
+    if (chartSeries.olAmLo) drawOutlooks();
+    const body = document.getElementById('ol-body');
+    if (!d.available) { body.textContent = 'Model not loaded'; return; }
+    const key = JSON.stringify(d.outlooks.map(o => o.status)) + d.day;
+    if (key === olKey) return;
+    olKey = key;
+    const pc = x => (x * 100).toFixed(0) + '%', ok = b => b ? '<span style="color:#3fb950">yes</span>' : '<span style="color:#f85149">no</span>';
+    body.innerHTML = d.outlooks.map(o => {
+      if (o.status === 'pending') return `<div style="margin-bottom:6px"><b>${o.name}</b> (${formatET(o.made_at)}): made when that bar closes.</div>`;
+      if (!o.price) return `<div style="margin-bottom:6px"><b>${o.name}</b>: not available (not enough history)</div>`;
+      const lean = o.p_close_above >= 0.5 ? `slight lean up (${pc(o.p_close_above)})` : `slight lean down (${pc(1 - o.p_close_above)})`;
+      const lv = [o.resistance && `resistance ${o.resistance.label} ${o.resistance.price.toFixed(2)}`, o.support && `support ${o.support.label} ${o.support.price.toFixed(2)}`].filter(Boolean).join(' &middot; ');
+      const g = o.status === 'graded'
+        ? `<div>Close <b>${o.actual_close.toFixed(2)}</b> (${o.move_bps >= 0 ? '+' : ''}${o.move_bps} bps): in 50% band ${ok(o.in50)} &middot; in 90% band ${ok(o.in90)} &middot; lean right ${ok(o.lean_ok)}</div>`
+        : `<div style="opacity:.7">Graded at the close.</div>`;
+      return `<div style="margin-bottom:8px"><b>${o.name}</b> made ${formatET(o.made_at)} at ${o.price.toFixed(2)}, ${o.minutes_left} min to close
+        <div>Close likely <b>${o.band50.lower.toFixed(2)} – ${o.band50.upper.toFixed(2)}</b> (50%), almost surely ${o.band90.lower.toFixed(2)} – ${o.band90.upper.toFixed(2)} (90%); median ${o.median_close.toFixed(2)}, ${lean}</div>
+        ${lv ? `<div>Levels then: ${lv}</div>` : ''}${g}</div>`;
+    }).join('') + `<div style="opacity:.7">90% band covered ${pc(d.honesty.to_close_band_coverage)} of closes in 2025-26 tests. ${d.note}</div>`;
+  } catch (e) { console.error('[API] outlook failed:', e); }
+}
+setInterval(fetchOutlook, 3000);
+fetchOutlook();
+
+
+// ============================================================================
+// Legend (only the layers that are on) and the "How to read this" dialog
+// ============================================================================
+
+const LEGEND = {
+  fc: ['<i class="sw solid" style="background:#58a6ff"></i>expected price to the close, <i class="sw dash" style="border-color:#d29922"></i><i class="sw dash" style="border-color:#a371f7"></i>likely high / low (9 in 10 days end inside)'],
+  next: ['<i class="sw solid" style="background:#e3b341"></i>next 10 min: the "flat" range'],
+  ol: ['<i class="sw thin" style="background:#79c0ff"></i><i class="sw thin" style="background:#d2a8ff"></i>closing range fixed at 10:00 / 12:30'],
+  calls: ['▲▼ earlier Up/Down calls, ✓ right, ✗ wrong (grey)'],
+  sr: ['<i class="sw solid" style="background:#3fb950"></i>support <i class="sw solid" style="background:#f85149"></i>resistance'],
+  vwap: ['<i class="sw solid" style="background:#f78166"></i>VWAP'],
+  bb: ['<i class="sw dash" style="border-color:#d29922"></i>Bollinger Bands'],
+  rsi: ['RSI panel (30 / 70 lines)'],
+  macd: ['MACD panel'],
+};
+function renderLegend() {
+  document.querySelectorAll('.toggle-btn[data-overlay]').forEach(b => b.classList.toggle('active', !!overlayVisibility[b.dataset.overlay]));
+  const el = document.getElementById('chart-legend');
+  if (!el) return;
+  const on = OVERLAY_KEYS.filter(k => overlayVisibility[k] && LEGEND[k]);
+  el.innerHTML = '<span class="lg-item">dimmed candle = still forming</span>' + on.map(k => `<span class="lg-item">${LEGEND[k][0]}</span>`).join('');
+}
+
+function setupHelp() {
+  const box = document.getElementById('help');
+  const show = (v) => box.classList.toggle('hidden', !v);
+  document.getElementById('btn-help').addEventListener('click', () => show(true));
+  document.getElementById('help-close').addEventListener('click', () => show(false));
+  box.addEventListener('click', (e) => { if (e.target === box) show(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') show(false); });
+  let seen = null;
+  try { seen = localStorage.getItem('help_seen'); localStorage.setItem('help_seen', '1'); } catch (e) { /* storage blocked */ }
+  if (!seen) show(true);         // first visit: open the guide once
+}
+setupHelp();
+renderLegend();
+
+// ---------------------------------------------------------------- Results tab
+var resLoaded = false;
+
+function setupTabs() {
+  document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
+}
+
+function showView(view) {
+  document.querySelectorAll('.tab').forEach(b => {
+    const on = b.dataset.view === view;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.getElementById('replay-view').classList.toggle('hidden', view !== 'replay');
+  document.getElementById('results-view').classList.toggle('hidden', view !== 'results');
+  if (view === 'results' && !resLoaded) loadResults();
+  if (view === 'replay') window.dispatchEvent(new Event('resize'));   // chart was laid out while hidden
+}
+
+const pct = (x, d = 1) => (x == null || isNaN(x)) ? '—' : (100 * x).toFixed(d) + '%';
+const mark = (b) => b == null ? '—' : (b ? '<span class="ok">✓ yes</span>' : '<span class="no">✗ no</span>');
+const RULE_NAMES = { always_neutral: 'Always Flat', always_up: 'Always Up', rsi_rule: 'RSI rule', persistence: 'Repeat last move' };
+
+function barsHTML(title, model, baselines) {
+  const rows = [['Model', model, true], ...Object.entries(baselines).map(([k, v]) => [RULE_NAMES[k] || k, v, false])];
+  const max = 0.5;
+  return `<div class="bars-group"><div class="bars-title">${title}</div>` + rows.map(([n, v, m]) =>
+    `<div class="bar-row${m ? ' model' : ''}" title="${n}: ${pct(v)}"><span>${n}</span>
+       <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, v / max * 100)}%"></div>
+       <div class="bar-guess" style="left:${(1 / 3) / max * 100}%" title="Random guessing: 33.3%"></div></div>
+       <span class="bar-val">${pct(v)}</span></div>`).join('') + '</div>';
+}
+
+async function loadResults() {
+  let r;
+  try { r = await (await fetch(`${API_BASE}/results`)).json(); } catch (e) {
+    document.getElementById('res-intro').textContent = 'Could not load results: ' + e; return;
+  }
+  resLoaded = true;
+  const t = r.test || {}, h = r.holdout || {}, a = r.activity || {}, b = r.big_move || {}, k = r.tick || {}, sd = r.single_day || {};
+  document.getElementById('res-intro').innerHTML =
+    `The models were trained on JPM 1-minute data up to <b>${r.cutoff}</b> and never saw anything after it. Results come from two
+     periods they never saw: a <b>test period</b> (${t.period || '—'}, ${(t.candles || 0).toLocaleString()} five-minute candles) and the
+     <b>${h.days || 0} trading days after the cutoff</b> (${h.first || ''} to ${h.last || ''}) that you can replay in the Replay tab.`;
+
+  const tile = (v, l, s) => `<div class="tile"><div class="t-val">${v}</div><div class="t-lbl">${l}</div><div class="t-sub">${s}</div></div>`;
+  document.getElementById('res-tiles').innerHTML = [
+    tile(pct(t.acc), `Up / Flat / Down, next ${r.horizon_min} min`, `Test period. Random guessing gets 33.3%, the best simple rule ${pct(Math.max(...Object.values(t.baselines || {0: 0})))}.`),
+    tile(pct(h.acc), 'Same call, unseen days', `${h.candles} candles after the cutoff. Beats "always Flat" on ${pct(h.beats?.always_neutral, 0)} of days.`),
+    tile(pct(a.acc), 'Activity: Quiet / Normal / Active', `Test period. Repeating the last 10 minutes gets ${pct(a.persistence)}.`),
+    tile((b.auc || 0).toFixed(2), 'Big-move warning (AUC)', `0.5 is guessing. When flagged, a big move came ${pct(b.flag_hit, 0)} of the time vs ${pct(b.base_rate, 0)} normally.`),
+    tile(pct(k.close_cov90, 0), 'Close inside the 90% range', `Test period, rest-of-day range. On the unseen days: ${pct(h.am_in90, 0)} (10:00) / ${pct(h.pm_in90, 0)} (12:30).`),
+    tile(pct(h.am_dir, 0), 'Day direction right (10:00 call)', `Close above/below the 10:00 price, unseen days. 12:30 call: ${pct(h.pm_dir, 0)}. Weak: treat as a coin flip.`),
+  ].join('');
+
+  // predicted vs actual, per day
+  const days = (h.per_day || []).slice().reverse();
+  const oc = (o) => o && o.price != null
+    ? `<td class="num">${formatPrice(o.price)}</td><td class="num">${formatPrice(o.median)}</td>
+       <td>${o.p_up >= 0.5 ? '▲ Up' : '▼ Down'} <span class="muted">${pct(o.p_up >= 0.5 ? o.p_up : 1 - o.p_up, 0)}</span> ${mark(o.lean_ok)}</td>
+       <td>${mark(o.in90)}</td>`
+    : '<td colspan="4" class="muted">—</td>';
+  document.getElementById('res-days').innerHTML =
+    `<thead><tr><th rowspan="2">Day</th><th class="num" rowspan="2">Close</th><th rowspan="2" title="Open to close">Day move</th>
+       <th colspan="4" class="grp">10:00 prediction</th><th colspan="4" class="grp">12:30 prediction</th>
+       <th colspan="2" class="grp">10-min calls</th></tr>
+     <tr><th class="num">Price then</th><th class="num">Exp. close</th><th title="Which way it expected the close vs the price then, how sure, and whether that came true">Day direction</th><th>In 90% range?</th>
+       <th class="num">Price then</th><th class="num">Exp. close</th><th title="Which way it expected the close vs the price then, how sure, and whether that came true">Day direction</th><th>In 90% range?</th>
+       <th class="num">Model</th><th title="Best of always Flat / always Up / RSI rule / repeat last move on that day">Best rule</th></tr></thead><tbody>` +
+    days.map(d => {
+      const mv = d.open && d.close ? (d.close / d.open - 1) * 100 : null;
+      return `<tr class="click" data-day="${d.day}" title="Replay ${d.day}">
+        <td>${d.day}</td><td class="num">${formatPrice(d.close)}</td>
+        <td>${mv == null ? '—' : (mv >= 0 ? '▲ +' : '▼ ') + mv.toFixed(2) + '%'}</td>${oc(d.am)}${oc(d.pm)}
+        <td class="num">${pct(d.model)}</td><td title="${RULE_NAMES[d.best_name]}">${pct(d.best_baseline)} ${d.model > d.best_baseline ? '<span class="ok">✓ beaten</span>' : '<span class="no">✗ lost</span>'}</td></tr>`;
+    }).join('') + '</tbody>';
+  document.getElementById('res-days-sum').innerHTML =
+    `Over ${h.days} days: the 10:00 direction call was right on ${pct(h.am_dir, 0)} of days and the 12:30 one on ${pct(h.pm_dir, 0)};
+     the close landed in the 90% range on ${pct(h.am_in90, 0)} / ${pct(h.pm_in90, 0)} of days and in the 50% range on ${pct(h.am_in50, 0)} / ${pct(h.pm_in50, 0)}.
+     The range is reliable, the day's direction is not.`;
+  document.querySelectorAll('#res-days tr.click').forEach(tr => tr.addEventListener('click', async () => {
+    const sel = document.getElementById('day-picker');
+    sel.value = tr.dataset.day;
+    showView('replay');
+    await sendReplayAction('load_day', tr.dataset.day);
+    if (replayState && replayState.last) await sendReplayAction('seek', replayState.last);   // jump to the close: whole day + every grade
+    await loadInitialChartData();
+  }));
+
+  // accuracy bars (test period, then unseen days)
+  document.getElementById('res-bars').innerHTML =
+    barsHTML(`Test period, ${(t.candles || 0).toLocaleString()} candles`, t.acc, t.baselines || {}) +
+    barsHTML(`Unseen days, ${h.candles} candles`, h.acc, h.baselines || {}) +
+    `<div class="res-note">Dashed line: random guessing (33.3%). On single test days the model beat "always Flat" on ${pct(sd.beats?.always_neutral, 0)}
+     of ${sd.days} days; its daily accuracy ranged from ${pct(sd.p10, 0)} (worst 10%) to ${pct(sd.p90, 0)} (best 10%).</div>`;
+
+  // every output
+  const rows = [
+    [`Up / Flat / Down, next ${r.horizon_min} min`, pct(t.acc), `best simple rule ${pct(Math.max(...Object.values(t.baselines || {0: 0})))}; guessing 33.3%`],
+    ['Calibration error (ECE)', pct(t.ece, 2), 'a "60%" call comes true about 60% of the time'],
+    ['Activity: Quiet / Normal / Active', pct(a.acc), `repeat last move ${pct(a.persistence)}, always Normal ${pct(a.always_normal)}`],
+    [`Big-move warning (> ${(b.bps || 0).toFixed(0)} bps)`, `AUC ${(b.auc || 0).toFixed(3)}`, `top 10% of scores: big move ${pct(b.top_decile, 0)}; bottom 10%: ${pct(b.bottom_decile, 0)}`],
+    ['Direction when the call is Up/Down', pct(t.dir_hit), 'close to a coin flip'],
+    ['Trading every Up/Down call', `${(t.net_bps_per_call || 0).toFixed(2)} bps`, `per call after ${t.cost_bps} bps cost: loses money`],
+    ['Next 1-minute direction', pct(k.acc), `always Up ${pct(k.always_up)} (${(k.n || 0).toLocaleString()} minutes)`],
+    ['Next-minute 90% range', pct(k.band_cov), 'target 90%'],
+    ['Rest-of-day close, 90% / 50% range', `${pct(k.close_cov90, 0)} / ${pct(k.close_cov50, 0)}`, 'target 90% / 50%'],
+  ];
+  document.getElementById('res-skills').innerHTML = '<thead><tr><th>Output</th><th class="num">Result</th><th>Compared with</th></tr></thead><tbody>' +
+    rows.map(([n, v, c]) => `<tr><td>${n}</td><td class="num">${v}</td><td class="wrap">${c}</td></tr>`).join('') + '</tbody>';
+
+  document.getElementById('res-method').innerHTML = [
+    `<b>Train till T-1, test on T.</b> Every model is trained only on data up to the cutoff (${r.cutoff}); <code>scripts/prepare_test_day.py</code> retrains for any new test day.`,
+    `<b>No look-ahead.</b> Calls are made only on closed candles and never changed afterwards; leakage tests in <code>tests/</code> check that features and levels use only past bars.`,
+    `<b>Classes.</b> Up / Down mean a move of more than ${(t.tau_bps || 0).toFixed(1)} bps in the next ${r.horizon_min} minutes; anything smaller is Flat. The threshold splits history into roughly equal thirds, so guessing scores 33%.`,
+    `<b>Sources.</b> <code>models/cls3_metrics.json</code>, <code>models/tick_config.json</code> (test period) and <code>docs/holdout_results.csv</code> (unseen days, from <code>scripts/holdout_eval.py</code>).`,
+  ].map(x => `<li>${x}</li>`).join('');
+}
+
+setupTabs();

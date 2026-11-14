@@ -38,6 +38,14 @@ class Predictor:
                   for k in self.cfg["anchors"] for q in self.cfg["quantiles"]}
         self.anchors = self.cfg["anchors"]
         self.qadj = {int(k): v for k, v in self.cfg["band_q_bps"].items()}
+        # optional 3-class call (Up / Neutral / Down) + big-move warning, from scripts/train_cls3.py
+        self.c3 = None
+        if (model_dir / "cls3.json").exists():
+            self.c3 = json.loads((model_dir / "cls3.json").read_text())
+            self.c3_lgb = lgb.Booster(model_file=str(model_dir / "cls3_lgb.txt"))
+            self.c3_lr = joblib.load(model_dir / "cls3_lr.joblib")
+            self.big = lgb.Booster(model_file=str(model_dir / "big_lgb.txt"))
+            self.act = lgb.Booster(model_file=str(model_dir / "act_lgb.txt")) if (model_dir / "act_lgb.txt").exists() else None
 
     @property
     def cutoff(self):
@@ -51,9 +59,24 @@ class Predictor:
             parts.append(self.lr.predict_proba(X)[:, 1])
         return self.iso.predict(np.mean(parts, axis=0))
 
+    def _prob3(self, X):
+        """Rows of P(Down), P(Neutral), P(Up)."""
+        X = X[self.c3["features"]]
+        parts = []
+        if self.c3["kind"] in ("lgb", "ens"):
+            parts.append(self.c3_lgb.predict(X))
+        if self.c3["kind"] in ("lr", "ens"):
+            parts.append(self.c3_lr.predict_proba(X))
+        return np.mean(parts, axis=0)
+
     def day_table(self, frames, day):
         """Predictions for every closed 5m candle of `day`. frames: 1m bars up to the end of that day."""
         f = features.build(frames).replace([np.inf, -np.inf], np.nan)
+        if self.c3 is not None:                       # label and past move at the 3-class horizon (may differ from the band horizon)
+            kk = self.c3["horizon_bars"]
+            lc = np.log(f["close"])
+            f["_yk"] = ((lc.shift(-kk) - lc) * 1e4).where(f["bars_left"] >= kk)
+            f["_pk"] = ((lc - lc.shift(kk)) * 1e4).fillna(0.0)
         et = f.index.tz_convert(B.ET)
         f = f[np.asarray(et.date) == day]
         X = f[self.cols]
@@ -62,6 +85,10 @@ class Predictor:
         P = np.transpose(P, (2, 0, 1)).astype(float)                                                      # n,A,Q
         thr, gate = self.cfg["threshold"], self.cfg["median_gate_bps"]
         i6 = self.anchors.index(self.cfg["horizon_bars"])
+        if self.c3 is not None:
+            P3 = self._prob3(X)
+            pbig = self.big.predict(X[self.c3["features"]])
+            PA = self.act.predict(X[self.c3["features"]]) if self.act is not None else None
         rows = []
         for n, (t, r) in enumerate(f.iterrows()):
             left = int(r["bars_left"])
@@ -79,8 +106,27 @@ class Predictor:
                     d = "Down"
             rows.append(dict(time=t, close=float(r["close"]), left=left, p_up=pu, direction=d, lean="Up" if pu >= 0.5 else "Down",
                              confidence=max(pu, 1 - pu), med6_bps=float(m6), lo=lo, med=med, hi=hi,
-                             y6=r.get(f"y{self.cfg['horizon_bars']}", np.nan)))
+                             y6=r.get(f"y{self.cfg['horizon_bars']}", np.nan), rsi=float(r["rsi_14"]), ret6=float(r["ret_6"])))
+            if self.c3 is not None:
+                k = int(np.argmax(P3[n]))
+                rows[-1].update(p_down3=float(P3[n, 0]), p_neutral=float(P3[n, 1]), p_up3=float(P3[n, 2]),
+                                call=self.c3["classes"][k] if left >= self.c3["horizon_bars"] else "No call",
+                                yk=float(r["_yk"]), pk=float(r["_pk"]),
+                                call_conf=float(P3[n, k]), p_big=float(pbig[n]), big=bool(pbig[n] >= self.c3["big_threshold"]))
+                if PA is not None:
+                    ka = int(np.argmax(PA[n]))
+                    rows[-1].update(act=self.c3["activity"][ka], act_conf=float(PA[n, ka]), p_quiet=float(PA[n, 0]), p_active=float(PA[n, 2]))
         return pd.DataFrame(rows).set_index("time")
+
+    def activity_of(self, move_bps):
+        """Quiet / Normal / Active for a 30-min move of this size (thresholds fixed at training time)."""
+        a = abs(move_bps)
+        return "Active" if a > self.c3["tau_hi_bps"] else "Normal" if a > self.c3["tau_bps"] else "Quiet"
+
+    def realised(self, y6):
+        """Class the 30-min move actually fell in (uses the tau fixed at training time)."""
+        tau = self.c3["tau_bps"]
+        return "Up" if y6 > tau else "Down" if y6 < -tau else "Neutral"
 
     # ---- per-row products ----
 

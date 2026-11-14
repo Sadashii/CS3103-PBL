@@ -122,6 +122,19 @@ A **trained model and a working live indicator for one asset.**
   day's session**, so graded predictions must be **intraday** and resolve within that session.
   *To confirm: on our replay app or TradingView's Bar Replay, and one day or several.*
 
+### 6.1 Second follow-up (TA chat, Nov 2026)
+- **Nothing else changed from class.** The one addition the instructor asked for is a **log table**
+  (every signal and how it turned out) to make the project easier to follow.
+- **Test length: one trading day** (overrides the brief's 5 days, section 4.3). "It's an indicator,
+  not a prediction, so one day is enough."
+- **Grading criteria for a "good" indicator will not be given.** Teams should research what traders
+  count as a good indicator; the TA judges.
+- **Not only Up/Down.** Show other insights or signals a trader would find useful. A 10-minute
+  timeframe *can* be used to test the model, but signals need not be every 10 minutes; they can
+  run over the whole day at whatever frequency is most useful (e.g. twice a day).
+- **Classification: multi-class** (Up / Down / Neutral), "**+ more** if you believe it helps".
+- TA holds a 1-hour Google Meet on Monday for doubts (time to be announced).
+
 ---
 
 ## 7. Hard caps
@@ -206,6 +219,11 @@ data source or the market.
 | D31 | Prediction pipeline design | **Decided by the research step (section 9)** before any model code: model architecture, look-back, inputs | — |
 | D32 | News stack | Sentiment **FinBERT** (`ProsusAI/finbert`); embeddings **`BAAI/bge-small-en-v1.5`** (384-d, fast on the 4060); vector DB **LanceDB** (embedded, file-based, works offline). All open-weight, run locally | Free, no server, laptop-friendly; FinBERT is the standard finance sentiment baseline |
 | D33 | 90% band and scenario paths | **Conformalized quantile regression (CQR)**: the model predicts 5/50/95% quantiles per future 5m step to the close; a recent calibration window corrects the width so ~90% coverage holds. Bull/base/bear paths come from those quantiles | Plain quantile models are often over-confident; CQR gives a coverage guarantee we can show in the report |
+| D34 | Log table | **Already built** (`#signal-log`, append-only, graded after the horizon). Keep it prominent; add realised class and running accuracy vs always-Up / RSI baselines | Instructor's only added requirement (6.1) |
+| D35 | Test length | **One replayed trading day** | 6.1 overrides brief 4.3 |
+| D36 | Graded call (decides O15, O16) | **3-class 30-min call on every 5m candle: Up / Neutral / Down**, Neutral = |move| <= tau (tau = 33rd pct of |30-min move| 2016-21, ~9.2 bps). Plus a **big-move warning** (P(|move| > ~33 bps), top 20%). `scripts/train_cls3.py`, same walk-forward as train.py. Log table grades every call and scores always-Neutral, always-Up, RSI rule and last-30-min persistence on the same candles | Full run, test 2025-26: accuracy 40.7% vs 32-35% for the baselines (ECE 0.007); beats always-Neutral on 73% of single days (so ~1 day in 4 a one-day test will look bad by luck); Up/Down calls alone are still a coin flip on direction (50.9%) and lose money after costs. Big-move AUC 0.77. The skill is in move size, as before |
+| D37 | Activity call ("+ more", 6.1) | **Quiet / Normal / Active** for the next 30 min (terciles of the move size, fixed on 2016-21: 9.2 / 22.8 bps), shown in the signal panel and graded in the log against "last 30 min repeats" | Test 2025-26: 45.2% vs 39.9% persistence and 33% chance; beats persistence on 71% of single days. `scripts/exp_magnitude.py`: 15 extra volatility features (realised vol, HAR, same-slot history) gave +0.2 pt on validation = noise, so not added; 19 volatility + time features alone match the full 100-feature model, i.e. the skill is volatility clustering and time of day |
+| D38 | Dashboard layout | Signal Log moved under the chart (full width, sticky header); scenario paths shortened to now / +30 min / close; a direction call with under 5 pts between Up and Down is shown as "Move expected, slight lean" | The log was buried under a ~70-line price list; a big green "Up" overstated a coin flip |
 
 ### Open
 | # | Decision | Options | Recommendation |
@@ -224,6 +242,10 @@ data source or the market.
 | O12 | *(dropped: no live feed at test time, see D3)* | | |
 | O13 | *(decided, see D26-D29)* | | |
 | O14 | Declare the asset to the instructor | — | Rule 1 says declare at the start: send "JPM" in writing now |
+| O15 | *(decided, see D36)* Class scheme (6.1) | (a) 3-class Up / Neutral / Down, Neutral = 30-min move within ±cost band; (b) 5-class with Strong Up / Strong Down; (c) 3-class + a separate "big move expected" volatility signal | **(c)**: our measured skill is in move *size*, not direction (HANDOFF), so Neutral-vs-Move is the part we can actually predict |
+| O16 | *(decided, see D36)* Z2 risk: deployed 30-min model makes **no calls** (threshold 1.01 after the nested check) | Keep, or let Neutral count as a signal | With 3 classes, "Neutral" is a real, gradeable call on every candle, so Z2 is met without faking direction confidence. Confirm with the TA on Monday that Neutral calls count |
+| O17 | Graded horizon (D17) | Keep 30 min on 5m candles, or switch to the TA's 10-min example | Keep 30 min unless the TA insists. One test day gives 13 non-overlapping 30-min checks (72 overlapping) vs 39 at 10 min |
+| O18 | Extra trader signals (6.1) | Expected range / volatility regime, VWAP distance, relative strength vs XLF and peers, unusual volume, event flags (earnings/FOMC), key levels (prior high/low/close, opening range) | Research topic 6 picks the set; prefer signals we can validate |
 
 
 ---
@@ -242,6 +264,7 @@ project (JPM, 5m candles, 30-min graded horizon, rest-of-day 90% band, SIP 1m da
 3. **Uncertainty bands and scenarios**: quantile regression, conformal prediction (CQR, adaptive conformal for time series), scenario path generation, regime-conditioned odds.
 4. **News sentiment and spread**: GDELT for finance, FinBERT, measuring story spread/virality, evidence that widely spread (incl. false) news moves prices.
 5. **Cross-asset and regime signals**: lead–lag of JPM vs SPY, XLF and peer banks; regime detection (HMM, volatility states); macro (yield curve, VIX) effects on banks.
+6. **What makes an indicator "good"** (TA asked us to research it, 6.1): how traders and the literature judge an indicator (hit rate of confident calls, calibration, profit after costs, lag, false-signal rate, no repainting, clarity) and which context signals traders actually use intraday (O18).
 
 Then combine the reports into `docs/PIPELINE.md`: the chosen prediction pipeline (D31) with reasons,
 which experiments the report must include, and the build order (see the week plan in the chat summary:
