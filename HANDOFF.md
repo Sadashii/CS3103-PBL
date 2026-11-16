@@ -105,7 +105,7 @@ FinBERT news scoring needs GPU torch, which does not support Python 3.14, so it 
   session outlooks) and Results tab (test numbers, per-day predicted vs actual).
 - **Report** (done): `report/main.tex`, plain two-column LaTeX article (11pt, no theme colours, no abstract),
   rewritten 2026-11-17 to the owner's limit: max 8 pages, body 6-7 pages excluding references/appendix. Current build:
-  title page + ~5.5 body pages + references + 1 appendix page (8 PDF pages). Compiled PDF committed as
+  title page + ~5.7 body pages + references + 1 appendix page (9 PDF pages); prose is first-person, plain, chronological. Compiled PDF committed as
   `report/Tanishq Sangwan_2401AI42_Report.pdf`. Figures in `report/figures/` come from
   `uv run --with matplotlib python scripts/make_figures.py`. No TeX on this machine: build with a standalone Tectonic
   binary (`tectonic -X compile main.tex`) or Overleaf (`report/README.md`).
