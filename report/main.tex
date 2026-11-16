@@ -1,721 +1,490 @@
 % CS3103 PBL report -- AI trading indicator for JPM
 % Build: latexmk -pdf main.tex   (or upload the report/ folder to Overleaf, compiler pdfLaTeX)
-\documentclass[11pt,a4paper,oneside,openany]{report}
+\documentclass[11pt,a4paper]{article}
 
-% ---------------------------------------------------------------- packages
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[scaled=0.95]{helvet}          % theme font: Helvetica / Arimo
-\renewcommand{\familydefault}{\sfdefault}
-\usepackage{sfmath}                        % sans-serif maths to match
-\usepackage[a4paper,margin=2.0cm,top=2.2cm,bottom=2.2cm]{geometry}
+\usepackage[a4paper,margin=2cm,columnsep=0.7cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
-\usepackage[table]{xcolor}
-\usepackage{booktabs,tabularx,array,multirow}
+\usepackage{booktabs,tabularx}
 \usepackage{float}
 \usepackage{caption,subcaption}
-\usepackage{titlesec}
 \usepackage{enumitem}
-\usepackage{fancyhdr}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,calc}
-\usepackage{tocloft}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\usepackage{microtype}
 \usepackage[hidelinks]{hyperref}
+\setlength{\emergencystretch}{2em}
 
 \graphicspath{{figures/}}
+\captionsetup{font=small,labelfont=bf}
+\setlist{itemsep=1pt,topsep=2pt,leftmargin=1.2em}
 
-% ---------------------------------------------------------------- theme colours (from the poster)
-\definecolor{paper}{HTML}{F8F3EA}
-\definecolor{card}{HTML}{FFFCF6}
-\definecolor{ink}{HTML}{24211D}
-\definecolor{ink2}{HTML}{5A544C}
-\definecolor{muted}{HTML}{6B665E}
-\definecolor{rulec}{HTML}{E3DDD2}
-\definecolor{cyan}{HTML}{2CC3E9}
-\definecolor{cyandeep}{HTML}{0D7794}
-\definecolor{model}{HTML}{0F8FB8}
-\definecolor{pink}{HTML}{FFA0FF}
-\definecolor{yellow}{HTML}{FFD46F}
-\definecolor{baseline}{HTML}{B3A998}
-
-\pagecolor{paper}          % comment out for a white page
-\color{ink}
-
-% ---------------------------------------------------------------- headings: cyan number + ink title + rule
-\titleformat{\chapter}[display]
-  {\normalfont\sffamily}
-  {\color{cyandeep}\small\bfseries CHAPTER \thechapter}
-  {2pt}
-  {\color{ink}\huge\bfseries}
-  [\vspace{2pt}{\color{ink}\titlerule[1.2pt]}]
-\titlespacing*{\chapter}{0pt}{-10pt}{18pt}
-\titleformat{\section}{\sffamily\Large\bfseries\color{ink}}{\color{model}\thesection}{0.6em}{}
-\titleformat{\subsection}{\sffamily\large\bfseries\color{ink}}{\color{model}\thesubsection}{0.6em}{}
-\titlespacing*{\section}{0pt}{14pt}{6pt}
-\titlespacing*{\subsection}{0pt}{10pt}{4pt}
-
-\captionsetup{font={small,color=ink2},labelfont={bf,color=ink},labelsep=period}
-\setlist{itemsep=2pt,topsep=4pt,leftmargin=1.4em}
-\setlength{\parskip}{4pt}
-\setlength{\parindent}{0pt}
-\renewcommand{\arraystretch}{1.18}
-
-\pagestyle{fancy}
-\fancyhf{}
-\fancyhead[L]{\color{muted}\footnotesize AI Trading Indicator for JPM}
-\fancyhead[R]{\color{muted}\footnotesize Tanishq Sangwan \,\textperiodcentered{}\, 2401AI42}
-\fancyfoot[C]{\color{muted}\footnotesize\thepage}
-\renewcommand{\headrulewidth}{0.4pt}
-\renewcommand{\headrule}{{\color{rulec}\hrule width\headwidth height\headrulewidth}}
-\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\color{muted}\footnotesize\thepage}\renewcommand{\headrulewidth}{0pt}}
-
-\setlength{\cftbeforetoctitleskip}{0pt}\setlength{\cftaftertoctitleskip}{4pt}
-\setlength{\cftbeforeloftitleskip}{0pt}\setlength{\cftafterloftitleskip}{4pt}
-\setlength{\cftbeforelottitleskip}{0pt}\setlength{\cftafterlottitleskip}{4pt}
-\renewcommand{\cfttoctitlefont}{\sffamily\Large\bfseries\color{ink}}
-\renewcommand{\cftloftitlefont}{\sffamily\Large\bfseries\color{ink}}
-\renewcommand{\cftlottitlefont}{\sffamily\Large\bfseries\color{ink}}
-\setlength{\cftbeforechapskip}{3pt}
-\renewcommand{\cftchapfont}{\bfseries}
-\renewcommand{\cftchappagefont}{\bfseries}
-\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
-
-% table row highlight for "ours"
-\newcommand{\ours}{\rowcolor{cyan!16}}
-
-% box used for key numbers
-\newcommand{\stat}[2]{%
-  \begin{minipage}[t]{0.23\linewidth}
-    {\color{model}\fontsize{22}{24}\selectfont #1}\\[2pt]
-    {\color{ink2}\footnotesize #2}
-  \end{minipage}}
-
-\hypersetup{pdftitle={AI Trading Indicator for JPMorgan Chase (JPM)},pdfauthor={Tanishq Sangwan (2401AI42)}}
-
-\renewcommand{\bibname}{References}
 \begin{document}
 
-% ================================================================ TITLE PAGE
+% ---------------------------------------------------------------- title page
 \begin{titlepage}
-\thispagestyle{empty}
-\begin{tikzpicture}[remember picture,overlay]
-  % theme cover motif: soft colour blobs and concentric circles
-  \fill[cyan,opacity=0.35] ($(current page.north east)+(-3.2,-2.6)$) circle (2.6);
-  \fill[pink,opacity=0.35] ($(current page.north east)+(-1.4,-4.4)$) circle (2.0);
-  \fill[yellow,opacity=0.45] ($(current page.north east)+(-4.8,-4.6)$) circle (1.7);
-  \foreach \r in {0.8,1.3,1.8,2.3,2.8}
-    \draw[ink,opacity=0.3,line width=0.4pt] ($(current page.south west)+(3.0,3.4)$) circle (\r);
-\end{tikzpicture}
-
-\vspace*{0.4cm}
-{\color{cyandeep}\small\bfseries CS3103 \,\textperiodcentered{}\, PROJECT-BASED LEARNING REPORT}
-
-\vspace{1.4cm}
-{\color{ink}\fontsize{28}{33}\selectfont\bfseries An AI Trading Indicator for\\[2pt] JPMorgan Chase (JPM)\par}
-
-\vspace{0.5cm}
-{\color{ink2}\Large Calibrated 10-minute Up / Flat / Down calls from\\ price, peer-bank and news signals\par}
-
-\vspace{0.6cm}
-{\color{ink}\rule{\linewidth}{1.2pt}}
-
-\vspace{1.0cm}
-\begin{tabular}{@{}l l@{}}
-\color{muted}Submitted by & \bfseries Tanishq Sangwan \\
-\color{muted}Roll number  & 2401AI42 \\
-\color{muted}E-mail       & tanishq\_2401ai42@iitp.ac.in \\[6pt]
-\color{muted}Course       & CS3103 -- Project-Based Learning (Machine Learning) \\
-\color{muted}Instructor   & Dr. Rishav Singh \\[6pt]
-\color{muted}Department   & Computer Science and Engineering \\
-\color{muted}Institute    & Indian Institute of Technology Patna \\
-\color{muted}Date         & November 2026 \\
+\centering
+\vspace*{2cm}
+{\large CS3103 -- Project-Based Learning (Machine Learning)\par}
+\vspace{1.5cm}
+{\LARGE\bfseries An AI Trading Indicator for\\[4pt] JPMorgan Chase (JPM)\par}
+\vspace{1.5cm}
+{\large Project Report\par}
+\vspace{2cm}
+\begin{tabular}{ll}
+Submitted by & Tanishq Sangwan (2401AI42) \\
+E-mail & tanishq\_2401ai42@iitp.ac.in \\
+Instructor & Dr. Rishav Singh \\
+Department & Computer Science and Engineering \\
+Institute & Indian Institute of Technology Patna \\
+Date & November 2026 \\
 \end{tabular}
-
 \vfill
-\begin{flushright}
-\includegraphics[width=3.4cm]{iitp-logo.png}
-\end{flushright}
+\includegraphics[width=3cm]{iitp-logo.png}
+\vspace*{1cm}
 \end{titlepage}
 
-% ================================================================ FRONT MATTER
-\pagenumbering{roman}
-\chapter*{Abstract}
-\addcontentsline{toc}{chapter}{Abstract}
-
-This project builds an explainable intraday indicator for JPMorgan Chase (JPM) stock. Every five minutes of the
-trading day it tells a newcomer whether the price is likely to go \textbf{Up}, stay \textbf{Flat} or go \textbf{Down}
-over the next ten minutes, how active the market is about to be, whether a large move is near, and where the price may
-close. The core model is a LightGBM gradient-boosted classifier fed with 103 \emph{causal} features, computed only from
-data available at the moment of the call: JPM price and volume, the S\&P~500 ETF (SPY), the financial-sector ETF (XLF),
-five peer banks (BAC, C, WFC, GS, MS), order-flow imbalance proxies, the time of day, and time-stamped news, earnings,
-Federal Reserve (FOMC) and SEC-filing events. Four further models give an activity level, a big-move warning,
-a next-minute call and conformal quantile bands for the rest-of-day price.
-
-The model was selected on 2022--2024 with an expanding walk-forward scheme and then scored once on untouched data. On
-the 2025-01-02 to 2026-10-27 test period (34,538 five-minute candles, 456 trading days) it reaches
-\textbf{40.7\,\% three-class accuracy}, against 32.8--35.8\,\% for simple rules, and beats each rule on 70--80\,\% of
-single days. Its probabilities are well calibrated (expected calibration error 0.6\,\%), the big-move warning has an
-AUC of 0.785, and on 13 later unseen days (28 Oct -- 13 Nov 2026) accuracy is 43.2\,\%. We also report a clear negative
-result: the \emph{sign} of the next move is not predictable from these inputs (49.6\,\% on Up/Down calls; ten model
-families, from logistic regression to a Transformer, all stay near 50\,\%). The model's skill lies in predicting the
-\emph{size} of the next move, which makes it a risk and activity guide rather than a profit signal. All results are
-shown live in a replay dashboard that grades every call against what actually happened.
-
-\vspace{6pt}
-\textbf{Keywords:} intraday forecasting, gradient boosting, LightGBM, probability calibration, conformal prediction,
-walk-forward validation, financial machine learning.
-
-\clearpage
-\begingroup
-\small\setlength{\parskip}{0pt}
-\let\clearpage\relax\let\cleardoublepage\relax
+% ---------------------------------------------------------------- contents (short)
+\setcounter{page}{1}
 \setcounter{tocdepth}{1}
-\tableofcontents
-\vspace{4pt}
-\listoffigures
-\vspace{4pt}
-\listoftables
-\endgroup
+\twocolumn[{\small\tableofcontents}\vspace{1em}]
 
-\clearpage
-\pagenumbering{arabic}
+% ================================================================
+\section{Introduction}
+Intraday stock prices move in small, noisy steps, and most ``buy/sell'' signals a new trader sees are never checked on
+data they were not built on. The efficient-market view \cite{fama1970} says past prices should tell us little about the
+next price change. On the other hand, intraday \emph{volatility} is known to follow strong patterns
+\cite{andersen1997}, and order flow explains a lot of short-term moves \cite{cont2014}.
 
-% ================================================================ CHAPTER 1
-\chapter{Introduction}
+We picked JPMorgan Chase (JPM). It is the largest US bank and it moves closely with its sector: 5-min returns have
+correlation 0.85 with the sector ETF XLF and 0.80 with Bank of America (Fig.~\ref{fig:eda}). So market, peer-bank and
+news data should carry some information about the next few minutes.
 
-\section{Background and Motivation}
-Intraday stock prices move in small, noisy steps. New investors see a stream of ``buy/sell'' signals, but few
-are tested on unseen data or say how sure they are. The efficient-market view \cite{fama1970} predicts that past prices hold
-little information about the next price change, while decades of work on intraday markets show strong and
-predictable patterns in \emph{volatility} \cite{andersen1997} and in order flow \cite{cont2014}.
-
-JPMorgan Chase, the largest US bank, moves closely with its sector: its five-minute returns have a correlation of 0.85
-with the sector ETF XLF and 0.80 with Bank of America (Figure~\ref{fig:eda}), so market, peer and news data should
-carry information about its next few minutes.
-
-\section{Problem Statement}
-Let $C_t$ be the JPM close of the five-minute candle ending at time $t$. Using only information available up to $t$,
-predict the class of the ten-minute log return
+\textbf{Problem.} Let $C_t$ be the JPM close of the 5-min candle ending at $t$. Using only data available up to $t$,
+predict the class of the 10-min log return
 \begin{equation}
-  r_t = 10^4 \,\ln\!\frac{C_{t+2}}{C_t}\quad\text{(basis points)}, \qquad
-  y_t = \begin{cases} \text{Up} & r_t > \tau \\ \text{Down} & r_t < -\tau \\ \text{Flat} & |r_t| \le \tau \end{cases}
+  r_t = 10^4 \ln\frac{C_{t+2}}{C_t},
+  \ y_t = \begin{cases} \text{Up} & r_t > \tau \\ \text{Down} & r_t < -\tau \\ \text{Flat} & \text{else} \end{cases}
   \label{eq:label}
 \end{equation}
-where $\tau = 5.53$\,bps is the 33rd percentile of $|r_t|$ over 2016--2021 (fixed before any validation or test
-year, so the classes are near-equal). The model outputs calibrated class probabilities and also predicts the
-activity level, the chance of a big move, and a range for the rest-of-day price.
+with $\tau = 5.53$\,bps, the 33rd percentile of $|r_t|$ on 2016--21, so the three classes are roughly equal. We also
+predict how active the market will be, the chance of a big move, and a price range for the rest of the day.
 
-\section{Objectives}
-(i) a leakage-free pipeline from raw one-minute bars and dated events to features; (ii) a three-class classifier that
-beats simple rules on unseen data; (iii) honest uncertainty, i.e.\ calibrated probabilities and price bands with
-known coverage; (iv) a replay dashboard that grades every call; (v) reporting what does \emph{not} work as clearly as
-what does.
-
-\section{Scope}
-One stock (JPM), regular hours (09:30--16:00 US Eastern), January 2016 to November 2026, five- and one-minute bars.
-The tool informs a human; it does not trade, and it does not model the order book, options or overnight sessions.
-
-\section{Contributions}
-\begin{enumerate}
-  \item \textbf{A causal feature pipeline} of 103 features in seven families, with leakage tests and a placebo check.
-  \item \textbf{A calibrated three-class call} (40.7\,\% vs 35.8\,\%), an \textbf{activity model} and a \textbf{big-move warning} (AUC 0.785).
-  \item \textbf{Conformal rest-of-day price bands} whose coverage is checked on the test set (93.6\,\% for a 90\,\% band).
-  \item \textbf{A documented negative result} (ten model families fail on direction) and \textbf{a replay dashboard} that scores every call.
-\end{enumerate}
-
-% ================================================================ CHAPTER 2
-\chapter{Literature Review}
-
-\section{Existing Approaches}
-
-\paragraph{Market efficiency and technical rules.}
-The efficient-market hypothesis \cite{fama1970} states that prices already reflect available information, so past
-prices should not predict future returns. Lo and MacKinlay \cite{lo1988} nevertheless rejected the pure random walk
-for weekly returns, and Brock, Lakonishok and LeBaron \cite{brock1992} found that simple moving-average and
-trading-range rules had predictive power on the Dow Jones index before costs. Such gains largely vanish after costs and
-multiple-testing corrections \cite{bailey2014}; we use RSI and persistence rules as baselines.
-
-\paragraph{Machine learning for returns.}
-Gu, Kelly and Xiu \cite{gu2020} compared linear models, trees and neural networks for monthly US stock returns and
-found that tree ensembles and neural networks beat linear models, mainly through non-linear interactions. Krauss, Do
-and Huck \cite{krauss2017} and Fischer and Krauss \cite{fischer2018} applied gradient-boosted trees, random forests
-and LSTM networks to daily S\&P~500 constituents and reported directional accuracy slightly above 50\,\% before costs.
-Gradient boosting libraries such as XGBoost \cite{chen2016}, LightGBM \cite{ke2017} and CatBoost
-\cite{prokhorenkova2018} remain the strongest choice for tabular data.
-
-\paragraph{Intraday volatility and order flow.}
-Intraday volatility follows a U-shape over the day and is highly persistent \cite{andersen1997}, which is why
-GARCH-type models \cite{bollerslev1986} forecast the \emph{size} of moves far better than their sign. Order-flow
-imbalance explains a large share of short-term price changes \cite{cont2014}. Without trade-level data, the buy/sell
-side of volume can be estimated with the tick rule \cite{lee1991} or bulk volume classification \cite{easley2012}.
-
-\paragraph{News and sentiment.}
-Tetlock \cite{tetlock2007} showed that negative media tone predicts downward pressure on market prices. Lexicon
-methods such as VADER \cite{hutto2014} and finance-tuned language models such as FinBERT \cite{araci2019} turn
-headlines into sentiment scores.
-
-\paragraph{Calibration and uncertainty.}
-Modern classifiers are often over-confident; Guo et al. \cite{guo2017} measure this with the expected calibration
-error (ECE). Quantile regression \cite{koenker1978} predicts price ranges, and conformalized quantile regression
-\cite{romano2019} adds a finite-sample coverage guarantee.
-
-\paragraph{Validation in finance.}
-L\'opez de Prado \cite{lopezdeprado2018} and Bailey et al. \cite{bailey2014} warn that random train/test splits,
-overlapping labels and repeated back-testing produce results that do not hold on new data; they recommend
-time-ordered walk-forward validation and a single, final test.
-
-\section{Research Gaps}
+\textbf{What we did.}
 \begin{itemize}
-  \item Most studies report \emph{direction} accuracy on daily data. Few separate direction from the size of the
-        move, although the literature on volatility suggests that size is the predictable part.
-  \item Many intraday studies use random splits or features that use future data (for example, a full-day VWAP or
-        news timestamps rounded to the day), which inflates results.
-  \item Probabilities are rarely checked for calibration, and price ranges rarely have their coverage measured.
-  \item Peer-bank, sector and event data are seldom combined for a single bank stock at five-minute resolution.
+  \item A causal feature pipeline (103 features) with leakage tests and a shuffled-label placebo check.
+  \item A 3-class call that beats simple rules out of sample (40.7\,\% vs 35.8\,\%), plus activity, big-move
+        (AUC 0.785) and price-band outputs.
+  \item A negative result: ten model families could not predict plain direction.
+  \item A replay dashboard that grades every call.
 \end{itemize}
-This project addresses them with a three-class target including ``Flat'', strictly causal features, walk-forward
-validation with an untouched test period, calibration and coverage checks, and a self-grading dashboard.
+Scope: one stock, regular hours (09:30--16:00 ET), Jan 2016 to Nov 2026. The tool informs a person; it does not trade.
 
-% ================================================================ CHAPTER 3
-\chapter{Proposed Methodology}
+% ================================================================
+\section{Related Work}
+Lo and MacKinlay \cite{lo1988} rejected the pure random walk for weekly returns, and Brock et al.\ \cite{brock1992} found simple moving-average rules had some predictive power on the Dow before costs,
+but such gains mostly disappear after costs and multiple-testing corrections \cite{bailey2014}. Gu, Kelly and Xiu
+\cite{gu2020} showed trees and neural nets beat linear models for monthly returns, and Krauss et al.\
+\cite{krauss2017} and Fischer and Krauss \cite{fischer2018} got daily S\&P~500 direction accuracy only a little above
+50\,\%. Gradient boosting (XGBoost \cite{chen2016}, LightGBM \cite{ke2017}, CatBoost \cite{prokhorenkova2018}) is still
+the strong default for tabular data.
 
-\section{Dataset Description}
-One-minute OHLCV bars (open, high, low, close, volume, trade count and VWAP) were downloaded from the Alpaca market
-data API using the consolidated SIP feed, which includes trades from all US exchanges. Table~\ref{tab:data}
-summarises the price data; Table~\ref{tab:feat} lists the event data used as features.
+Volatility is persistent and U-shaped over the day \cite{andersen1997,bollerslev1986}, which is why the \emph{size} of
+a move is easier to forecast than its sign. Without trade data, buy/sell volume can be estimated with the tick rule
+\cite{lee1991} or bulk volume classification \cite{easley2012}. Tetlock \cite{tetlock2007} showed negative media tone predicts downward pressure on prices; tone can be scored with
+VADER \cite{hutto2014} or the finance-tuned FinBERT \cite{araci2019}. For uncertainty we follow Guo et al.\ \cite{guo2017} (calibration error) and conformalized
+quantile regression \cite{romano2019}. L\'opez de Prado \cite{lopezdeprado2018} warns against random splits and
+repeated back-testing, so we use walk-forward validation and a single final test.
 
-\begin{table}[!htbp]
-\centering
-\caption{Price data (one-minute bars, regular and extended hours, until 31 Dec 2024).}
+Gaps we noticed: most papers report only direction on daily data, many intraday studies leak future data (e.g.\ news
+rounded to the day), and calibration or band coverage is rarely checked.
+
+% ================================================================
+\section{Data}
+One-minute OHLCV bars (with trade count and VWAP) from the Alpaca API, SIP feed (all US exchanges), for JPM, SPY
+(market), XLF (sector) and five peer banks: BAC, C, WFC, GS, MS. Table~\ref{tab:data} gives the counts up to the end of 2024. Events: Alpaca news (publication time), earnings dates, FOMC statement times
+and SEC filings (8-K, Form~4, 13D/G, 10-Q/10-K, by acceptance time).
+
+\begin{table}[t]
+\centering\small
+\caption{1-min bars up to 31 Dec 2024 (regular + extended hours).}
 \label{tab:data}
-\small
-\begin{tabular}{@{}l l r l@{}}
+\begin{tabular}{@{}l l r@{}}
 \toprule
-Ticker & Role & 1-min bars & First bar \\
+Ticker & Role & Bars \\
 \midrule
-JPM & target stock & 1,037,473 & 2016-01-04 \\
-SPY & S\&P 500 ETF (market) & 1,774,344 & 2016-01-01 \\
-XLF & financial-sector ETF & 1,094,874 & 2016-01-01 \\
-BAC, C, WFC & peer banks & 1.04--1.29\,M each & 2016-01-01 \\
-GS, MS & peer banks & 0.94--0.95\,M each & 2016-01-01 \\
+JPM & target & 1,037,473 \\
+SPY & market ETF & 1,774,344 \\
+XLF & sector ETF & 1,094,874 \\
+BAC, C, WFC & peers & 1.04--1.29\,M each \\
+GS, MS & peers & 0.94--0.95\,M each \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Events: JPM and market news (Alpaca news API, publication time), earnings dates, FOMC statement times and SEC
-filings (8-K, Form~4, 13D/G, 10-Q/10-K, acceptance time). After alignment, 2016--2024 gives \textbf{173,376} five-minute rows; data from 2025
-onward is kept for testing.
-
-\section{Data Preprocessing}
+\textbf{Preprocessing.}
 \begin{enumerate}
-  \item \textbf{Session and resampling.} Keep regular hours (09:30--16:00 US Eastern, NYSE calendar; complete
-        sessions only) and aggregate one-minute bars into five-minute candles (78 per day), aligned across tickers.
-  \item \textbf{Causal features.} A feature for candle $t$ uses only bars closed at or before $t$ and only news or
-        filings published at or before $t$; daily quantities come from the previous session.
-  \item \textbf{Labels.} Equation~\eqref{eq:label}; the last two candles of a day have no label (76 per day).
-  \item \textbf{Missing values.} Native in LightGBM; median imputation and standardisation for logistic regression.
-  \item \textbf{Leakage checks.} Unit tests recompute features on truncated data and require identical values; a
-        model trained on shuffled labels must not beat the majority class by more than 1.5 points.
+  \item Keep regular hours of complete sessions (NYSE calendar) and resample to 5-min candles (78 a day), aligned
+        across tickers. 2016--24 gives \textbf{173,376} rows; 2025 onward is held back for testing.
+  \item A feature at candle $t$ only uses bars closed at or before $t$ and news/filings published at or before $t$.
+        Daily quantities come from the previous session.
+  \item The last two candles of a day have no label (76 labelled per day).
+  \item Missing values are left to LightGBM; for logistic regression we use median imputation and scaling.
 \end{enumerate}
 
-\section{Exploratory Data Analysis}
-Figure~\ref{fig:eda} shows two facts that shape the model. First, five-minute moves are about three times larger in
-the first half hour than at midday and rise again before the close, so time of day must be a feature. Second, JPM moves together with the sector and its peers; the correlation with XLF is 0.85 and with
-SPY 0.66. The three classes are balanced by construction: on the test period the shares are 33.1\,\% Down,
-32.8\,\% Flat and 34.1\,\% Up.
+\textbf{EDA.} Fig.~\ref{fig:eda} shows the two things that shaped the model. 5-min moves are about three times bigger
+in the first half hour than at midday, so time of day has to be a feature. And JPM moves with the sector (0.85 with
+XLF, 0.66 with SPY). On the test period the classes are 33.1\,\% Down, 32.8\,\% Flat, 34.1\,\% Up.
 
-\begin{figure}[!htbp]
+\begin{figure*}[t]
   \centering
-  \begin{subfigure}[b]{0.40\linewidth}\includegraphics[width=\linewidth]{fig_eda_intraday.png}\caption{Mean absolute 5-min move by time of day.}\end{subfigure}\hfill
-  \begin{subfigure}[b]{0.33\linewidth}\includegraphics[width=\linewidth]{fig_eda_corr.png}\caption{Correlation of 5-min returns, 2016--24.}\end{subfigure}
-  \caption{Exploratory analysis of JPM five-minute returns.}
+  \begin{subfigure}[b]{0.48\textwidth}\includegraphics[width=\linewidth]{fig_eda_intraday.png}\caption{Mean $|$5-min move$|$ by time of day.}\end{subfigure}\hfill
+  \begin{subfigure}[b]{0.40\textwidth}\includegraphics[width=\linewidth]{fig_eda_corr.png}\caption{Return correlations.}\end{subfigure}
+  \caption{EDA on JPM 5-min returns, 2016--24.}
   \label{fig:eda}
-\end{figure}
+\end{figure*}
 
-\section{Model Architecture}
-Figure~\ref{fig:arch} shows the system. One feature row per five-minute candle feeds four models; a fifth model works
-on one-minute bars for the next-minute call and the rest-of-day bands. Support and resistance levels are rule-based
-(previous-day high, low and close, floor pivots, five-day high and low, pre-market and opening range, and
-clustered 15-minute swing points) and are only drawn on the chart; nothing in them is fitted.
+% ================================================================
+\section{Method}
 
-\begin{figure}[!htbp]
+\subsection{Features}
+103 features in 7 families (Table~\ref{tab:feat}). Order-flow imbalance is approximated from bars in three ways: tick
+rule \cite{lee1991}, close-location value $\frac{(C-L)-(H-C)}{H-L}$, and bulk volume classification
+\cite{easley2012}. News tone is the VADER score \cite{hutto2014} of headline + summary, plus keyword flags (upgrade,
+downgrade, price target, legal, earnings, dividend).
+
+\begin{table}[t]
+\centering\small
+\caption{Feature families.}
+\label{tab:feat}
+\begin{tabularx}{\columnwidth}{@{}l c X@{}}
+\toprule
+Family & \# & Examples \\
+\midrule
+Volatility \& range & 10 & realised vol (1 h, 1 d, 5 d), Bollinger width \\
+Market \& peers & 17 & SPY, XLF, peer returns; JPM vs peers \\
+Volume \& order flow & 19 & imbalance (tick, CLV, BVC); trade size \\
+Momentum & 17 & 5--120 min returns, RSI, MACD, VWAP gap \\
+News \& events & 32 & news count/tone; time since earnings, FOMC \\
+Day range & 5 & distance to today's/yesterday's high, low \\
+Time & 3 & candle number, candles left, weekday \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Models}
+Fig.~\ref{fig:arch} shows the system. One feature row per candle feeds the direction, activity and big-move models; a
+separate 1-min model gives the next-minute call and the rest-of-day bands. Support/resistance lines (previous day
+high/low/close, pivots, opening range, swing points) are plain rules, only drawn on the chart.
+
+The direction model is LightGBM \cite{ke2017}: per class $k$ an ensemble of trees
+$F_k(\mathbf{x}) = \sum_m \eta f_{k,m}(\mathbf{x})$, turned into probabilities by a softmax and trained on multi-class
+log-loss. For the price bands, LightGBM quantile regression predicts 7 quantiles of the return to the close (pinball
+loss), and conformalized quantile regression \cite{romano2019} widens it: with scores
+$s_i = \max\{\hat y_{\text{lo}}(x_i) - y_i,\ y_i - \hat y_{\text{hi}}(x_i)\}$ on a calibration set and $E$ their
+$\lceil(1-\alpha)(n+1)\rceil/n$ quantile, the band is $[\hat y_{\text{lo}} - E,\ \hat y_{\text{hi}} + E]$, with
+coverage close to $1-\alpha$.
+
+\begin{figure}[t]
 \centering
-\begin{tikzpicture}[
-  font=\sffamily\footnotesize,
-  box/.style={draw=rulec,fill=card,rounded corners=2pt,align=center,inner sep=5pt,text width=#1},
-  box/.default=3.6cm,
-  mbox/.style={draw=model,line width=0.9pt,fill=card,rounded corners=2pt,align=center,inner sep=5pt,text width=2.65cm},
-  arr/.style={-{Stealth[length=2.4mm]},draw=model,line width=1pt},
-  node distance=0.55cm and 0.3cm]
-  \node[box] (m) {\textbf{Market bars (1 min)}\\JPM, SPY, XLF};
-  \node[box,right=of m] (p) {\textbf{Peer banks (1 min)}\\BAC, C, WFC, GS, MS};
-  \node[box,right=of p] (e) {\textbf{Events}\\news, earnings, FOMC, SEC filings};
-  \node[box=12.1cm,draw=cyandeep,line width=0.9pt,below=0.6cm of p] (f)
-       {\textbf{Causal feature builder: 103 features in 7 families}\\volatility \& range \,\textperiodcentered{}\, market \& peers \,\textperiodcentered{}\, volume / order flow \,\textperiodcentered{}\, news \& events \,\textperiodcentered{}\, momentum \,\textperiodcentered{}\, time of day \,\textperiodcentered{}\, position in day range};
-  \draw[arr] (m.south) -- (m.south |- f.north);
-  \draw[arr] (p.south) -- (f.north);
-  \draw[arr] (e.south) -- (e.south |- f.north);
-  \node[mbox,below=0.6cm of f.south west,anchor=north west] (d) {\textbf{Direction}\\LightGBM, 3 classes, next 10 min};
-  \node[mbox,right=0.15cm of d] (a) {\textbf{Activity}\\Quiet / Normal / Active};
-  \node[mbox,right=0.15cm of a] (b) {\textbf{Big move}\\$|r| >$ 80th percentile};
-  \node[mbox,right=0.15cm of b] (q) {\textbf{1-min model}\\next minute + conformal bands};
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}[font=\footnotesize,
+  box/.style={draw,align=center,inner sep=3pt,text width=#1},
+  box/.default=2.3cm,
+  arr/.style={-{Stealth[length=2mm]}},
+  node distance=0.35cm and 0.15cm]
+  \node[box] (m) {1-min bars\\JPM, SPY, XLF};
+  \node[box,right=of m] (p) {peer banks\\BAC C WFC GS MS};
+  \node[box,right=of p] (e) {news, earnings,\\FOMC, SEC};
+  \node[box=7.4cm,below=of p] (f) {causal feature builder (103 features, 7 families)};
+  \foreach \n in {m,p,e} \draw[arr] (\n.south) -- (\n.south |- f.north);
+  \node[box=1.65cm,below=0.4cm of f.south west,anchor=north west] (d) {direction\\3 classes};
+  \node[box=1.65cm,right=of d] (a) {activity};
+  \node[box=1.65cm,right=of a] (b) {big move};
+  \node[box=1.65cm,right=of b] (q) {1-min model\\+ bands};
   \foreach \n in {d,a,b,q} \draw[arr] (f.south -| \n.north) -- (\n.north);
-  \coordinate (ab) at ($(a.south)!0.5!(b.south)$);
-  \node[box=12.1cm,below=0.6cm of ab] (s)
-       {\textbf{FastAPI + WebSocket replay server}\\streams candles, call probabilities, bands and rule-based support / resistance levels};
+  \node[box=7.4cm,below=0.4cm of $(a.south)!0.5!(b.south)$] (s) {FastAPI + WebSocket server $\to$ dashboard};
   \foreach \n in {d,a,b,q} \draw[arr] (\n.south) -- (\n.south |- s.north);
-  \node[box=12.1cm,fill=cyan!12,below=0.4cm of s] (ui)
-       {\textbf{Dashboard}: one chart with toggleable layers, plain-language call, outlook, results tab};
-  \draw[arr] (s) -- (ui);
-\end{tikzpicture}
-\caption{System architecture of the indicator.}
+\end{tikzpicture}}
+\caption{System overview.}
 \label{fig:arch}
 \end{figure}
 
-\paragraph{Feature families.} Table~\ref{tab:feat} lists the 103 features. Order-flow imbalance is estimated from
-bars with three proxies: the tick rule \cite{lee1991}, the close-location value $\frac{(C-L)-(H-C)}{H-L}$, and bulk
-volume classification \cite{easley2012}. News tone is the VADER compound score \cite{hutto2014} of headline and
-summary, plus keyword flags (upgrade, downgrade, price target, legal, earnings, dividend).
+\subsection{Training and validation}
+Algorithm~\ref{alg:wf}. Each year is predicted by a model that has only seen earlier years. We did not tune much; the
+settings in Table~\ref{tab:setup} were picked to be conservative (big leaves, strong regularisation) because the
+signal is weak and overfitting was the main worry.
 
-\begin{table}[!htbp]
-\centering
-\caption{Feature families (all computed from data at or before the candle).}
-\label{tab:feat}
-\small
-\begin{tabularx}{\linewidth}{@{}l c X@{}}
-\toprule
-Family & Count & Examples \\
-\midrule
-Volatility \& range & 10 & realised volatility (1 h, 1 day, 5 days); candle range; Bollinger width \\
-Market \& peer banks & 17 & SPY, XLF and peer returns; JPM vs SPY and peers; correlation with SPY \\
-Volume \& order flow & 19 & buy/sell imbalance (tick rule, CLV, BVC); trade count and size vs normal \\
-Price momentum \& indicators & 17 & returns over 5--120 min; RSI(14); MACD; distance from VWAP; gap \\
-News, earnings, Fed, filings & 32 & news count and tone (30 min--1 day); time since news, earnings, FOMC; 8-K \\
-Position in day range & 5 & distance to today's and yesterday's high and low \\
-Time of day / calendar & 3 & candle number, candles left, day of week \\
-\midrule
-Total & 103 & \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\paragraph{LightGBM classifier.} LightGBM \cite{ke2017} fits an additive ensemble of $M$ regression trees for each
-class $k$, $F_k(\mathbf{x}) = \sum_{m=1}^{M} \eta\, f_{k,m}(\mathbf{x})$, and turns the scores into probabilities with
-the softmax
-\begin{equation}
-  P(y = k \mid \mathbf{x}) = \frac{\exp F_k(\mathbf{x})}{\sum_{j=1}^{3}\exp F_j(\mathbf{x})}.
-\end{equation}
-Each tree fits the gradient of the multi-class log-loss (histogram-based, leaf-wise growth).
-
-\section{Algorithm}
-Algorithm~\ref{alg:wf} gives the training and evaluation procedure. The expanding walk-forward loop means each year
-is predicted by a model that has only seen earlier years, as it would have been in real life.
-
-\begin{algorithm}[H]
-\small
-\caption{Walk-forward training and evaluation of the three-class call}
-\label{alg:wf}
-\begin{algorithmic}[1]
-\Require five-minute feature matrix $X$ (103 columns), forward returns $r$, cutoff date $T = $ 2026-10-27
-\State $\tau \gets$ 33rd percentile of $|r|$ on 2016--2021; \ $y \gets$ Up / Flat / Down by Eq.~\eqref{eq:label}
-\State fit logistic regression on 2016--2024 with \emph{shuffled} $y$, score on 2025
-\If{placebo accuracy $>$ majority share $+ 1.5$ points} \State \textbf{stop}: leakage suspected \EndIf
-\For{$Y \in \{2022, 2023, 2024, 2025, 2026\}$}
-  \State $\mathcal{D}_{\text{train}} \gets$ all candles before 1 January $Y$; \ $\mathcal{D}_{\text{pred}} \gets$ candles of year $Y$
-  \State fit LightGBM and logistic regression on $\mathcal{D}_{\text{train}}$
-  \State store out-of-sample $\hat{P}(\text{Up},\text{Flat},\text{Down})$ for $\mathcal{D}_{\text{pred}}$
-\EndFor
-\State choose the model with the lowest log-loss on 2022--2024 (validation)
-\State report the chosen model once on 2025-01-02 \ldots\ $T$ (test), overall and day by day
-\State refit the chosen model on all candles up to $T$ and save it for the dashboard
-\State \textbf{live:} for every new candle, build features $\to$ $\hat{P}$, activity, big-move risk, bands
-\end{algorithmic}
-\end{algorithm}
-
-\section{Experimental Setup}
-Python 3 with LightGBM, scikit-learn, pandas and FastAPI; settings in Table~\ref{tab:setup}.
-\vspace{-6pt}
-\begin{table}[H]
-\centering
-\caption{Experimental setup and hyper-parameters.}
+\begin{table}[t]
+\centering\small
+\caption{Setup and hyper-parameters.}
 \label{tab:setup}
-\small
-\begin{tabularx}{\linewidth}{@{}l X@{}}
+\begin{tabularx}{\columnwidth}{@{}l X@{}}
 \toprule
 Item & Setting \\
 \midrule
-Data split & walk-forward fits on all years before $Y$; model chosen on 2022--24 (56,843 candles); test 2025-01-02 \ldots\ 2026-10-27 (34,538 candles, 456 days); unseen 2026-10-28 \ldots\ 11-13 (988 candles) \\
-Horizon / threshold & 10 minutes (2 candles); $\tau = 5.53$\,bps; big move $|r| > 19.7$\,bps \\
-LightGBM (classifiers) & 400 trees, learning rate 0.03, 15 leaves, min.\ 300 samples per leaf, subsampling 0.7, L2 penalty 10 \\
-LightGBM (quantile) & 120 trees, learning rate 0.05, 15 leaves, min.\ 300 samples per leaf \\
-Logistic regression; cost & median imputation, standardisation, L2, $C = 0.05$; trading cost 2\,bps round trip \\
+Split & walk-forward; validation 2022--24 (56,843 candles); test 2025-01-02 .. 2026-10-27 (34,538); unseen 2026-10-28 .. 11-13 (988) \\
+Horizon & 10 min (2 candles), $\tau=5.53$\,bps; big move $|r|>19.7$\,bps \\
+LightGBM & 400 trees, lr 0.03, 15 leaves, $\geq$300 per leaf, subsample 0.7, L2 10 \\
+Quantile GBM & 120 trees, lr 0.05, 15 leaves, $\geq$300 per leaf \\
+LogReg & median impute, standardise, L2, $C=0.05$ \\
+Cost & 2\,bps round trip \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-% ================================================================ CHAPTER 4
-\chapter{Results and Discussion}
+\begin{algorithm}[t]
+\small
+\caption{Walk-forward training of the 3-class call}
+\label{alg:wf}
+\begin{algorithmic}[1]
+\State $\tau \gets$ 33rd pct of $|r|$ on 2016--21; $y$ by Eq.~\eqref{eq:label}
+\State placebo: fit on shuffled $y$; \textbf{stop} if acc $>$ majority $+1.5$ pp
+\For{$Y = 2022, \dots, 2026$}
+  \State fit LightGBM and LogReg on all candles before $Y$
+  \State predict $\hat P(\text{Up},\text{Flat},\text{Down})$ for year $Y$
+\EndFor
+\State pick the model with lowest log-loss on 2022--24
+\State report it once on 2025-01-02 \dots 2026-10-27
+\State refit on all data up to 2026-10-27, save, serve
+\end{algorithmic}
+\end{algorithm}
 
-\section{Evaluation Metrics}
-For $N$ candles with true class $y_i$ and predicted probabilities $\hat{p}_{i,k}$:
+\textbf{Leakage checks.} (1) Features computed on truncated data must equal those on full data (max difference 0).
+(2) Deleting news published after a bar must not change that bar's features. (3) Replay sweep: 365,352 checks of
+what the dashboard shows vs what was known at the time, 0 leaks. (4) Training stops if any single feature has
+$|\text{IC}| > 0.06$ with the label, or if the placebo predicts.
+
+\textbf{Metrics.} For $N$ candles with true class $y_i$ and predicted probabilities $\hat p_{i,k}$:
 \begin{align}
-  \text{Accuracy} &= \frac{1}{N}\sum_{i=1}^{N} \mathbb{1}\big[\arg\max_k \hat{p}_{i,k} = y_i\big], \\
-  \text{Log-loss} &= -\frac{1}{N}\sum_{i=1}^{N} \ln \hat{p}_{i,y_i}, \\
-  \text{ECE} &= \frac{1}{3}\sum_{k=1}^{3}\sum_{b=1}^{10} \frac{|B_{k,b}|}{N}\,\Big|\,\overline{\mathbb{1}[y=k]}_{B_{k,b}} - \overline{\hat{p}_k}_{B_{k,b}}\Big| ,
+  \text{Acc} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}[\arg\max_k \hat p_{i,k} = y_i],\\
+  \text{LL} &= -\tfrac{1}{N}\textstyle\sum_i \ln \hat p_{i,y_i},\\
+  \text{ECE} &= \tfrac{1}{3}\textstyle\sum_{k}\sum_{b=1}^{10} \tfrac{|B_{k,b}|}{N}\big|\bar y_{k,b} - \bar p_{k,b}\big|,
 \end{align}
-where $B_{k,b}$ is the $b$-th bin of predicted probability for class $k$. The big-move warning is scored by the area
-under the ROC curve (AUC); price bands by their coverage (share of actual prices inside the band) and pinball loss.
-Because the live examination replays a single day, we also report \emph{days won}: the share of test days on which
-our accuracy is strictly higher than a baseline's.
+where $B_{k,b}$ is the $b$-th probability bin for class $k$ \cite{guo2017}. The big-move warning is scored by AUC, and
+bands by coverage (share of real prices inside) and the pinball loss $\rho_q(u)=u\,(q-\mathbb{1}[u<0])$. We also count \emph{days won}: the share of
+test days where our accuracy beats a baseline's, since the live check runs day by day.
 
-\paragraph{Price bands.} The one-minute model predicts seven quantiles (5th to 95th percentile) of the return from now to the
-close with LightGBM quantile regression, which minimises the pinball loss
-\begin{equation}
-  \rho_q(u) = u\,\big(q - \mathbb{1}[u < 0]\big), \qquad u = y - \hat{y}_q .
-\end{equation}
-Conformalized quantile regression \cite{romano2019} then widens the band by $E$, the
-$\lceil (1-\alpha)(n+1) \rceil / n$ empirical quantile of the scores
-$s_i = \max\{\hat{y}_{\text{lo}}(x_i) - y_i,\; y_i - \hat{y}_{\text{hi}}(x_i)\}$ on a calibration set, giving
-$[\hat{y}_{\text{lo}} - E,\ \hat{y}_{\text{hi}} + E]$ with coverage close to $1-\alpha$.
+% ================================================================
+\section{Results}
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.8\textwidth]{ui_replay.png}
+  \caption{Dashboard replaying 13 Nov 2026: candles, prediction layers, current call and the day's scorecard.}
+  \label{fig:ui}
+\end{figure*}
 
-\section{Experimental Results}
-\begin{center}
-\stat{40.7\,\%}{3-class accuracy, 2025--26 test}\hfill
-\stat{43.2\,\%}{accuracy, 13 unseen days}\hfill
-\stat{0.785}{AUC of big-move warning}\hfill
-\stat{0.6\,\%}{calibration error (ECE)}
-\end{center}
+\subsection{Main result}
+Test period: 2025-01-02 to 2026-10-27, 34,538 candles over 456 days. Validation was 2022--24 (56,843 candles).
 
-\begin{table}[H]
-\centering
-\caption{Three-class accuracy on the test period (34,538 candles, 456 days).}
+\begin{table}[t]
+\centering\small
+\caption{3-class accuracy on the test period. Last column: share of test days where LightGBM beats that rule.}
 \label{tab:main}
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}l r r r@{}}
 \toprule
-Method & Accuracy & Log-loss & Days model wins \\
+Method & Acc. & Log-loss & Days won \\
 \midrule
 Always Flat & 32.8\,\% & -- & 80\,\% \\
-Always Up (training majority) & 34.1\,\% & -- & 70\,\% \\
-RSI overbought / oversold rule & 34.6\,\% & -- & 73\,\% \\
-Persistence (last move repeats) & 35.8\,\% & -- & 70\,\% \\
-Logistic regression & 39.7\,\% & 1.079 & -- \\
-\ours LightGBM (deployed) & \textbf{40.7\,\%} & \textbf{1.065} & -- \\
-\ours LightGBM, 13 unseen days & \textbf{43.2\,\%} & -- & -- \\
+Always Up & 34.1\,\% & -- & 70\,\% \\
+RSI rule & 34.6\,\% & -- & 73\,\% \\
+Persistence & 35.8\,\% & -- & 70\,\% \\
+Log. regression & 39.7\,\% & 1.079 & -- \\
+\textbf{LightGBM} & \textbf{40.7\,\%} & \textbf{1.065} & -- \\
+LightGBM, 13 new days & 43.2\,\% & -- & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-LightGBM was chosen on validation log-loss (1.066 vs 1.092 for logistic regression and 1.073 for their average) and
-keeps the same ranking on test. A uniform guess has log-loss $\ln 3 = 1.099$. On single days the model's accuracy
-ranges from 31.6\,\% (10th percentile) to 50.0\,\% (90th percentile).
+LightGBM won on validation log-loss (1.066 vs 1.092 for logistic regression, 1.073 for the average of both) and stays
+ahead on test (Table~\ref{tab:main}, Fig.~\ref{fig:acc}). A uniform guess has log-loss $\ln 3 = 1.099$. Probabilities
+are well calibrated: ECE 0.6\,\%. On the 13 days after the cutoff (28 Oct -- 13 Nov 2026) accuracy was 43.2\,\% vs
+36.8\,\% for persistence (per-day numbers in Appendix~\ref{app:holdout}).
 
-\begin{table}[H]
-\centering
-\caption{The other outputs of the indicator, on the 2025--26 test period.}
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{fig_accuracy.png}
+  \caption{Accuracy of our model (blue) vs simple rules; dashed line = random guess.}
+  \label{fig:acc}
+\end{figure*}
+
+Single-day accuracy goes from 31.6\,\% (10th pct) to 50.0\,\% (90th pct), and the whole distribution sits to the
+right of the best rule (Fig.~\ref{fig:daily}), so it is not a few lucky days. Feature importance
+(Fig.~\ref{fig:imp}): volatility and range get 55\,\% of split gain, market and peers 13\,\%, order flow and news about
+9\,\% each. So the model is mostly forecasting \emph{how much} the price will move.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\columnwidth]{fig_daily.png}
+  \caption{One-day accuracy over the 456 test days.}
+  \label{fig:daily}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig_importance.png}
+  \caption{Share of LightGBM split gain by feature family.}
+  \label{fig:imp}
+\end{figure}
+
+\subsection{Other outputs}
+\begin{table}[t]
+\centering\small
+\caption{Other outputs on the 2025--26 test period.}
 \label{tab:other}
-\begin{tabularx}{\linewidth}{@{}X r r@{}}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\columnwidth}{@{}X r r@{}}
 \toprule
 Output & Ours & Baseline \\
 \midrule
-Activity level (Quiet / Normal / Active), accuracy & 46.3\,\% & 40.2\,\% (persistence) \\
-Big-move warning, AUC & 0.785 & 0.5 (chance) \\
-\quad share of big moves in top-decile risk & 57.7\,\% & 20.3\,\% (base rate) \\
-Next-minute direction, accuracy (170,990 minutes) & 51.8\,\% & 50.3\,\% (always up) \\
-\quad most confident 10\,\% of minutes & 54.2\,\% & -- \\
-Next-minute 90\,\% band, coverage & 90.4\,\% & target 90\,\% \\
-Rest-of-day 90\,\% / 50\,\% band, coverage & 93.6\,\% / 54.2\,\% & target 90\,\% / 50\,\% \\
-Rest-of-day pinball loss (bps) & 14.0 & 15.1 (volatility-scaled) \\
-Direction right on Up/Down calls (18,624 calls) & 49.6\,\% & 50\,\% \\
-Average result per Up/Down call after 2\,bps cost & $-2.21$\,bps & -- \\
+Activity (3 levels), acc. & 46.3\,\% & 40.2\,\% \\
+Big-move warning, AUC & 0.785 & 0.5 \\
+\ \ big moves in top-10\,\% risk & 57.7\,\% & 20.3\,\% \\
+Next-minute direction, acc. & 51.8\,\% & 50.3\,\% \\
+\ \ top-10\,\% most confident & 54.2\,\% & -- \\
+Next-minute 90\,\% band cover & 90.4\,\% & 90\,\% \\
+Rest-of-day 90/50\,\% band cover & 93.6/54.2\,\% & 90/50\,\% \\
+Rest-of-day pinball (bps) & 14.0 & 15.1 \\
+Up/Down calls, direction right & 49.6\,\% & 50\,\% \\
+Per call after 2\,bps cost & $-2.21$\,bps & -- \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\section{Comparison with Existing Models}
-Before the three-class design, we tested whether \emph{any} standard model family could predict the plain direction
-(Up vs Down) of the next 30 minutes. All ten families were trained with the same walk-forward split and the same
-features; a stacked meta-learner combined them. Table~\ref{tab:zoo} shows that none of them
-beats the base rate of 50.9\,\%: the best single model only matches it and the stacked ensemble is 0.2 points
-above it, inside the $\pm$0.5-point 95\,\% interval. This agrees with the literature, where daily direction accuracies are only slightly above 50\,\%
-\cite{krauss2017,fischer2018}, and it is why our final target adds a Flat class and focuses on the size of the move.
+Table~\ref{tab:other}. Activity and big-move outputs clearly beat their baselines and the bands hit their coverage
+targets. On the unseen days the 10:00 forecast of the close put the actual close inside its 90\,\% band on 11 of 13
+days (12:30 forecast: 13 of 13), but its lean up or down was right on only 7 of 13 (Fig.~\ref{fig:close}).
 
-\begin{table}[H]
-\centering
-\caption{Model families on 30-minute direction (test 2025--26, 32,530 rows; base rate 50.9\,\%).}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig_close.png}
+  \caption{Close forecast at 10:00 (band, median) vs actual close, 13 unseen days.}
+  \label{fig:close}
+\end{figure}
+
+\subsection{What did not work}
+Before settling on 3 classes, we tried to predict plain Up vs Down for the next 30 minutes with ten model families, all
+with the same features and walk-forward split (Table~\ref{tab:zoo}). None beat the 50.9\,\% base rate by more than
+the $\pm$0.5-point 95\,\% interval. This matches the daily results in \cite{krauss2017,fischer2018} and is why we added
+the Flat class and focused on move size.
+
+\begin{table}[t]
+\centering\small
+\caption{30-min direction, test 2025--26 (32,530 rows, base rate 50.9\,\%).}
 \label{tab:zoo}
-\begin{tabular}{@{}l l r r@{}}
+\begin{tabular}{@{}l r r@{}}
 \toprule
-Model & Family & Test accuracy & Test AUC \\
+Model & Acc. & AUC \\
 \midrule
-Logistic regression & linear & 50.6\,\% & 0.491 \\
-LightGBM \cite{ke2017} & gradient boosting & 50.9\,\% & 0.509 \\
-XGBoost \cite{chen2016} & gradient boosting & 50.8\,\% & 0.508 \\
-CatBoost \cite{prokhorenkova2018} & gradient boosting & 50.0\,\% & 0.499 \\
-Extra-trees classifier & random trees & 50.1\,\% & 0.501 \\
-Extra-trees regressor & random trees & 50.9\,\% & 0.510 \\
-MLP & neural network & 50.6\,\% & 0.491 \\
-GRU \cite{cho2014} & recurrent network & 50.7\,\% & 0.498 \\
-1-D CNN & convolutional network & 50.0\,\% & 0.490 \\
-Transformer \cite{vaswani2017} & attention network & 50.6\,\% & 0.495 \\
-Stacked meta-learner & ensemble & 51.1\,\% & 0.512 \\
+Logistic regression & 50.6\,\% & 0.491 \\
+LightGBM & 50.9\,\% & 0.509 \\
+XGBoost & 50.8\,\% & 0.508 \\
+CatBoost & 50.0\,\% & 0.499 \\
+Extra-trees (clf / reg) & 50.1 / 50.9\,\% & 0.501 / 0.510 \\
+MLP & 50.6\,\% & 0.491 \\
+GRU \cite{cho2014} & 50.7\,\% & 0.498 \\
+1-D CNN & 50.0\,\% & 0.490 \\
+Transformer \cite{vaswani2017} & 50.6\,\% & 0.495 \\
+Stacked ensemble & 51.1\,\% & 0.512 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Graphical Analysis}
-Figure~\ref{fig:acc} compares accuracy with the baselines on the test period and on the unseen days.
-Figure~\ref{fig:daily} shows that the advantage is not driven by a few good days: the distribution of one-day
-accuracy sits to the right of the best baseline. Figure~\ref{fig:imp} shows what the model relies on: volatility and
-range features carry 55\,\% of the split gain, market and peer features 13\,\%, and order flow and news about 9\,\%
-each. This confirms that the model is mainly forecasting how much the price will move.
+Other things that did not help: daily-horizon models (1 day / 1 week / 1 month, six banks pooled) got 51--54\,\%, below
+always-up (53/57/60\,\%). FinBERT news scores, SEC filings, quarterly fundamentals, overnight/intraday splits, peer
+lead-lag and pairs z-scores did not change this beyond noise. One next-day model scored 58.5\,\% on its most confident
+25\,\% of days, but always-up got 56.5\,\% in the same period, the same slice got 49.2\,\% on validation, and it was
+only 41 days, so we treat it as noise.
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.9\linewidth]{fig_accuracy.png}
-  \caption{Three-class accuracy of our model (blue) and the baselines (grey); dashed line is a random guess.}
-  \label{fig:acc}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}[b]{0.40\linewidth}\includegraphics[width=\linewidth]{fig_daily.png}\caption{One-day accuracy over 456 test days.}\label{fig:daily}\end{subfigure}\hfill
-  \begin{subfigure}[b]{0.50\linewidth}\includegraphics[width=\linewidth]{fig_importance.png}\caption{Share of LightGBM split gain by family.}\label{fig:imp}\end{subfigure}
-  \caption{Day-by-day accuracy and feature importance.}
-\end{figure}
-
-Figure~\ref{fig:close} checks the rest-of-day outlook on the 13 unseen days. The forecast made at 10:00 placed the
-actual close inside its 90\,\% band on 11 of 13 days, and the forecast made at 12:30 on 13 of 13. The \emph{lean}
-of the outlook (above or below the current price) was right on 7 of 13 days at 10:00 and 5 of 13 at 12:30, again no
-better than a coin. Figure~\ref{fig:ui} shows the replay dashboard.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.68\linewidth]{fig_close.png}
-  \caption{Close forecast made at 10:00 (band and median) vs the actual close, 13 unseen days.}
-  \label{fig:close}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.72\linewidth]{ui_replay.png}
-  \caption{Replay dashboard on 13 Nov 2026: candles with prediction layers, the current call, and the day's scorecard.}
-  \label{fig:ui}
-\end{figure}
-
-\section{Discussion}
+\subsection{Discussion}
 \begin{itemize}
-  \item \textbf{The model works where volatility is predictable.} Its gain over the baselines comes from the Flat
-        class and from the activity and big-move outputs. When a quiet period is coming it says ``Flat'', and that
-        call is right 43.5\,\% of the time against a 32.8\,\% base rate.
-  \item \textbf{Direction is not predictable here.} On its Up/Down calls the direction is right 49.6\,\% of the
-        time, and after a 2\,bps cost each call loses 2.2\,bps on average. We therefore present the indicator as a
-        risk and activity guide, not as a buy/sell signal.
-  \item \textbf{A tempting number we rejected.} A next-day direction model scored 58.5\,\% on its most confident
-        25\,\% of test days. But ``always up'' scored 56.5\,\% in the same period because the market rose, the same
-        slice scored 49.2\,\% on validation, and the sample was only 41 days. We report it as noise.
-  \item \textbf{Honest evaluation matters.} The placebo test, causal features and a single final test make the
-        reported numbers lower than many published ones, but they are the numbers a user would see live; on the 13
-        unseen days the accuracy (43.2\,\%) was in fact slightly higher than on the test period.
+  \item The gain over baselines comes from the Flat class and the activity / big-move outputs. When the model calls
+        Flat it is right 43.5\,\% of the time vs a 32.8\,\% base rate.
+  \item Direction is not predictable here: 49.6\,\% on Up/Down calls and $-2.2$\,bps per call after costs. So the
+        indicator is a risk/activity guide, not a buy/sell signal.
+  \item Our numbers are lower than many published ones because of the strict checks, but they held up on the unseen
+        days (43.2\,\% vs 40.7\,\% on test).
 \end{itemize}
 
-% ================================================================ CHAPTER 5
-\chapter{Conclusion and Future Scope}
+\subsection{Dashboard}
+FastAPI + WebSocket server with a Lightweight Charts front end (Fig.~\ref{fig:ui}). It replays any session after the
+training cutoff candle by candle, shows the call with its probabilities, activity, big-move risk, the price bands and
+support/resistance lines, and grades each call once its 10 minutes are over. A results tab shows the test numbers and
+per-day predicted vs actual.
 
-\section{Key Findings}
-\begin{enumerate}
-  \item A LightGBM model on 103 causal features predicts the ten-minute Up / Flat / Down class of JPM with 40.7\,\%
-        accuracy on 2025--26 data it never saw, against 35.8\,\% for the best simple rule, and 43.2\,\% on 13 later
-        days.
-  \item Its probabilities are calibrated (ECE 0.6\,\%), its big-move warning has an AUC of 0.785, and its conformal
-        price bands reach their target coverage.
-  \item Most of its skill comes from volatility, market and peer-bank features: it predicts how much the price will
-        move, not which way.
-  \item Ten model families, from linear models to a Transformer, cannot predict the direction alone.
-\end{enumerate}
 
-\section{Limitations}
-\begin{itemize}
-  \item No direction edge: the calls cannot be traded at a profit after costs.
-  \item One stock and one sector; results may differ for less liquid or non-financial stocks.
-  \item Bars, not the order book: true order-flow imbalance and bid-ask spreads are only approximated.
-  \item News tone comes from a general-purpose lexicon, and only headlines and summaries are used.
-  \item The unseen-day check covers only 13 days.
-\end{itemize}
 
-\section{Future Directions}
-\begin{itemize}
-  \item Add level-2 order-book data and measured order-flow imbalance \cite{cont2014}.
-  \item Train one model across many bank stocks to get more data per pattern.
-  \item Use regime-aware models (for example, separate models for high- and low-volatility days).
-  \item Replace lexicon sentiment with a finance-tuned language model such as FinBERT \cite{araci2019}.
-  \item Keep scoring the locked model on new days to build a longer live track record.
-\end{itemize}
 
-% ================================================================ REFERENCES
+
+% ================================================================
+\section{Conclusion}
+A LightGBM model on 103 causal features predicts the 10-min Up/Flat/Down class of JPM at 40.7\,\% on 2025--26 data it
+never saw (best simple rule 35.8\,\%) and 43.2\,\% on 13 later days, with calibrated probabilities (ECE 0.6\,\%), a
+useful big-move warning (AUC 0.785) and price bands that hit their coverage. It predicts how much the price will move,
+not which way.
+
+\textbf{Limitations.} No direction edge, so the calls cannot be traded profitably after costs. One stock and one
+sector. Bars only, no order book, so order flow is approximated. News tone uses a general lexicon on headlines. The
+unseen-day check is only 13 days.
+
+\textbf{Future work.} Order-book data and real order-flow imbalance \cite{cont2014}; one model trained across many
+banks; separate models for high- and low-volatility regimes; keep scoring the frozen model on new days.
+
+% ================================================================
 \begin{thebibliography}{99}
-\addcontentsline{toc}{chapter}{References}
-\footnotesize\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
-\bibitem{fama1970} E.~F. Fama, ``Efficient capital markets: A review of theory and empirical work,'' \emph{The Journal of Finance}, vol.~25, no.~2, pp.~383--417, 1970.
-\bibitem{lo1988} A.~W. Lo and A.~C. MacKinlay, ``Stock market prices do not follow random walks: Evidence from a simple specification test,'' \emph{The Review of Financial Studies}, vol.~1, no.~1, pp.~41--66, 1988.
-\bibitem{brock1992} W.~Brock, J.~Lakonishok, and B.~LeBaron, ``Simple technical trading rules and the stochastic properties of stock returns,'' \emph{The Journal of Finance}, vol.~47, no.~5, pp.~1731--1764, 1992.
-\bibitem{bailey2014} D.~H. Bailey, J.~M. Borwein, M.~L\'opez de Prado, and Q.~J. Zhu, ``Pseudo-mathematics and financial charlatanism: The effects of backtest overfitting on out-of-sample performance,'' \emph{Notices of the AMS}, vol.~61, no.~5, pp.~458--471, 2014.
-\bibitem{gu2020} S.~Gu, B.~Kelly, and D.~Xiu, ``Empirical asset pricing via machine learning,'' \emph{The Review of Financial Studies}, vol.~33, no.~5, pp.~2223--2273, 2020.
-\bibitem{krauss2017} C.~Krauss, X.~A. Do, and N.~Huck, ``Deep neural networks, gradient-boosted trees, random forests: Statistical arbitrage on the S\&P 500,'' \emph{European Journal of Operational Research}, vol.~259, no.~2, pp.~689--702, 2017.
-\bibitem{fischer2018} T.~Fischer and C.~Krauss, ``Deep learning with long short-term memory networks for financial market predictions,'' \emph{European Journal of Operational Research}, vol.~270, no.~2, pp.~654--669, 2018.
-\bibitem{chen2016} T.~Chen and C.~Guestrin, ``XGBoost: A scalable tree boosting system,'' in \emph{Proc. 22nd ACM SIGKDD}, 2016, pp.~785--794.
-\bibitem{ke2017} G.~Ke \emph{et al.}, ``LightGBM: A highly efficient gradient boosting decision tree,'' in \emph{Advances in Neural Information Processing Systems 30}, 2017.
-\bibitem{prokhorenkova2018} L.~Prokhorenkova, G.~Gusev, A.~Vorobev, A.~V. Dorogush, and A.~Gulin, ``CatBoost: Unbiased boosting with categorical features,'' in \emph{Advances in Neural Information Processing Systems 31}, 2018.
-\bibitem{andersen1997} T.~G. Andersen and T.~Bollerslev, ``Intraday periodicity and volatility persistence in financial markets,'' \emph{Journal of Empirical Finance}, vol.~4, no.~2--3, pp.~115--158, 1997.
-\bibitem{bollerslev1986} T.~Bollerslev, ``Generalized autoregressive conditional heteroskedasticity,'' \emph{Journal of Econometrics}, vol.~31, no.~3, pp.~307--327, 1986.
-\bibitem{cont2014} R.~Cont, A.~Kukanov, and S.~Stoikov, ``The price impact of order book events,'' \emph{Journal of Financial Econometrics}, vol.~12, no.~1, pp.~47--88, 2014.
-\bibitem{lee1991} C.~M.~C. Lee and M.~J. Ready, ``Inferring trade direction from intraday data,'' \emph{The Journal of Finance}, vol.~46, no.~2, pp.~733--746, 1991.
-\bibitem{easley2012} D.~Easley, M.~L\'opez de Prado, and M.~O'Hara, ``Flow toxicity and liquidity in a high-frequency world,'' \emph{The Review of Financial Studies}, vol.~25, no.~5, pp.~1457--1493, 2012.
-\bibitem{tetlock2007} P.~C. Tetlock, ``Giving content to investor sentiment: The role of media in the stock market,'' \emph{The Journal of Finance}, vol.~62, no.~3, pp.~1139--1168, 2007.
-\bibitem{hutto2014} C.~J. Hutto and E.~Gilbert, ``VADER: A parsimonious rule-based model for sentiment analysis of social media text,'' in \emph{Proc. 8th International AAAI Conference on Weblogs and Social Media (ICWSM)}, 2014.
+\footnotesize\setlength{\itemsep}{0pt}
+\bibitem{fama1970} E.~F. Fama, ``Efficient capital markets: A review of theory and empirical work,'' \emph{J. Finance}, 25(2):383--417, 1970.
+\bibitem{lo1988} A.~W. Lo, A.~C. MacKinlay, ``Stock market prices do not follow random walks,'' \emph{Rev. Financial Studies}, 1(1):41--66, 1988.
+\bibitem{tetlock2007} P.~C. Tetlock, ``Giving content to investor sentiment: The role of media in the stock market,'' \emph{J. Finance}, 62(3):1139--1168, 2007.
+\bibitem{brock1992} W.~Brock, J.~Lakonishok, B.~LeBaron, ``Simple technical trading rules and the stochastic properties of stock returns,'' \emph{J. Finance}, 47(5):1731--1764, 1992.
+\bibitem{bailey2014} D.~H. Bailey, J.~M. Borwein, M.~L\'opez de Prado, Q.~J. Zhu, ``Pseudo-mathematics and financial charlatanism,'' \emph{Notices of the AMS}, 61(5):458--471, 2014.
+\bibitem{gu2020} S.~Gu, B.~Kelly, D.~Xiu, ``Empirical asset pricing via machine learning,'' \emph{Rev. Financial Studies}, 33(5):2223--2273, 2020.
+\bibitem{krauss2017} C.~Krauss, X.~A. Do, N.~Huck, ``Deep neural networks, gradient-boosted trees, random forests: Statistical arbitrage on the S\&P 500,'' \emph{EJOR}, 259(2):689--702, 2017.
+\bibitem{fischer2018} T.~Fischer, C.~Krauss, ``Deep learning with long short-term memory networks for financial market predictions,'' \emph{EJOR}, 270(2):654--669, 2018.
+\bibitem{chen2016} T.~Chen, C.~Guestrin, ``XGBoost: A scalable tree boosting system,'' \emph{KDD}, 2016.
+\bibitem{ke2017} G.~Ke et al., ``LightGBM: A highly efficient gradient boosting decision tree,'' \emph{NeurIPS}, 2017.
+\bibitem{prokhorenkova2018} L.~Prokhorenkova et al., ``CatBoost: Unbiased boosting with categorical features,'' \emph{NeurIPS}, 2018.
+\bibitem{andersen1997} T.~G. Andersen, T.~Bollerslev, ``Intraday periodicity and volatility persistence in financial markets,'' \emph{J. Empirical Finance}, 4(2--3):115--158, 1997.
+\bibitem{bollerslev1986} T.~Bollerslev, ``Generalized autoregressive conditional heteroskedasticity,'' \emph{J. Econometrics}, 31(3):307--327, 1986.
+\bibitem{cont2014} R.~Cont, A.~Kukanov, S.~Stoikov, ``The price impact of order book events,'' \emph{J. Financial Econometrics}, 12(1):47--88, 2014.
+\bibitem{lee1991} C.~M.~C. Lee, M.~J. Ready, ``Inferring trade direction from intraday data,'' \emph{J. Finance}, 46(2):733--746, 1991.
+\bibitem{easley2012} D.~Easley, M.~L\'opez de Prado, M.~O'Hara, ``Flow toxicity and liquidity in a high-frequency world,'' \emph{Rev. Financial Studies}, 25(5):1457--1493, 2012.
+\bibitem{hutto2014} C.~J. Hutto, E.~Gilbert, ``VADER: A parsimonious rule-based model for sentiment analysis of social media text,'' \emph{ICWSM}, 2014.
 \bibitem{araci2019} D.~Araci, ``FinBERT: Financial sentiment analysis with pre-trained language models,'' arXiv:1908.10063, 2019.
-\bibitem{guo2017} C.~Guo, G.~Pleiss, Y.~Sun, and K.~Q. Weinberger, ``On calibration of modern neural networks,'' in \emph{Proc. 34th International Conference on Machine Learning (ICML)}, 2017, pp.~1321--1330.
-\bibitem{koenker1978} R.~Koenker and G.~Bassett, ``Regression quantiles,'' \emph{Econometrica}, vol.~46, no.~1, pp.~33--50, 1978.
-\bibitem{romano2019} Y.~Romano, E.~Patterson, and E.~J. Cand\`es, ``Conformalized quantile regression,'' in \emph{Advances in Neural Information Processing Systems 32}, 2019.
-\bibitem{lopezdeprado2018} M.~L\'opez de Prado, \emph{Advances in Financial Machine Learning}. Hoboken, NJ: Wiley, 2018.
-\bibitem{cho2014} K.~Cho \emph{et al.}, ``Learning phrase representations using RNN encoder-decoder for statistical machine translation,'' in \emph{Proc. EMNLP}, 2014, pp.~1724--1734.
-\bibitem{vaswani2017} A.~Vaswani \emph{et al.}, ``Attention is all you need,'' in \emph{Advances in Neural Information Processing Systems 30}, 2017.
+\bibitem{guo2017} C.~Guo, G.~Pleiss, Y.~Sun, K.~Q. Weinberger, ``On calibration of modern neural networks,'' \emph{ICML}, 2017.
+\bibitem{romano2019} Y.~Romano, E.~Patterson, E.~J. Cand\`es, ``Conformalized quantile regression,'' \emph{NeurIPS}, 2019.
+\bibitem{lopezdeprado2018} M.~L\'opez de Prado, \emph{Advances in Financial Machine Learning}, Wiley, 2018.
+\bibitem{cho2014} K.~Cho et al., ``Learning phrase representations using RNN encoder-decoder for statistical machine translation,'' \emph{EMNLP}, 2014.
+\bibitem{vaswani2017} A.~Vaswani et al., ``Attention is all you need,'' \emph{NeurIPS}, 2017.
 \end{thebibliography}
 
-% ================================================================ APPENDIX
+% ================================================================
+\onecolumn
 \appendix
-\titleformat{\chapter}[display]{\normalfont\sffamily}{\color{cyandeep}\small\bfseries APPENDIX \thechapter}{2pt}{\color{ink}\huge\bfseries}[\vspace{2pt}{\color{ink}\titlerule[1.2pt]}]
-\chapter{Implementation}
-
-\section{Code Repository}
-The complete implementation (data download, feature pipeline, training scripts, evaluation, dashboard, figures and
-this report) is available at:
-
-\begin{center}
-\color{model}\large\url{https://github.com/Sadashii/CS3103-PBL}
-\end{center}
-
-\section{How to Run}
+\section{Code and how to run}
+Code: \url{https://github.com/Sadashii/CS3103-PBL}
 \begin{small}
 \begin{verbatim}
-uv sync                                              # install dependencies
-uv run python scripts/fetch_data.py                  # 1-min bars (keys in .env)
+uv sync                                                  # install dependencies
+uv run python scripts/fetch_data.py                      # 1-min bars (Alpaca keys in .env)
 uv run python scripts/train_cls3.py --cutoff 2026-10-27  # train + test
-uv run python scripts/train_tick.py                  # next-minute model and price bands
-uv run python scripts/holdout_eval.py                # score the unseen days
+uv run python scripts/train_tick.py                      # next-minute model and price bands
+uv run python scripts/holdout_eval.py                    # score the unseen days
 uv run --with matplotlib python scripts/make_figures.py  # figures
-uv run uvicorn server.app:app --port 8000            # dashboard, port 8000
+uv run uvicorn server.app:app --port 8000                # dashboard
 \end{verbatim}
 \end{small}
 
-\section{Results on the Unseen Days}
+\section{Results on the unseen days}
+\label{app:holdout}
 \begin{table}[H]
-\centering
+\centering\small
 \caption{Per-day results after the training cutoff (76 labelled candles per day).}
-\label{tab:holdout}
-\small
 \begin{tabular}{@{}l r r c c r r@{}}
 \toprule
 Day & Model acc. & Persistence & 10:00 lean right & Close in 10:00 band & Open (\$) & Close (\$) \\
@@ -734,10 +503,9 @@ Day & Model acc. & Persistence & 10:00 lean right & Close in 10:00 band & Open (
 2026-11-12 & 47.4\,\% & 39.5\,\% & yes & yes & 345.75 & 342.84 \\
 2026-11-13 & 46.1\,\% & 42.1\,\% & no  & yes & 346.41 & 346.22 \\
 \midrule
-\textbf{All 13 days} & \textbf{43.2\,\%} & 36.8\,\% & 7 / 13 & 11 / 13 & & \\
+All 13 days & 43.2\,\% & 36.8\,\% & 7 / 13 & 11 / 13 & & \\
 \bottomrule
 \end{tabular}
 \end{table}
-
 
 \end{document}
