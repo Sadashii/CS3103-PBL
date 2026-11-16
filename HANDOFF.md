@@ -107,8 +107,8 @@ FinBERT news scoring needs GPU torch, which does not support Python 3.14, so it 
   `report/Tanishq Sangwan_2401AI42_Report.pdf`. Figures in `report/figures/` come from
   `uv run --with matplotlib python scripts/make_figures.py`. Build with Tectonic or Overleaf (`report/README.md`).
   It sits exactly at 15 pages: any added content needs an equal cut.
-- **Poster** (done): built in Figma, file key `L1qp6jtvaXul9K6DnExgsY` (Poster page, frame 5:2). Not exported yet;
-  export only when the owner asks, as `Tanishq Sangwan_2401AI42.pdf`.
+- **Poster** (done): built in Figma, file key `L1qp6jtvaXul9K6DnExgsY` (Poster page, frame 5:2). Exported 2026-11-17 as
+  vector PDF to `poster/Tanishq Sangwan_2401AI42.pdf` (1920x1080 pt, 1 page); content checked against the report.
 - **Theme** shared by poster, report and dashboard: paper #F8F3EA, card #FFFCF6, ink #24211D, cyan #2CC3E9,
   deep cyan #0D7794, pink #FFA0FF, yellow #FFD46F, baseline grey #B3A998; Helvetica/Arimo.
 - **Still open**: tests are runnable as scripts (`uv run python tests/test_causal.py`) but pytest is not in the venv;
